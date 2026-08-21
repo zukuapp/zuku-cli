@@ -1,0 +1,24 @@
+﻿{
+  "name": "zuku-cli",
+  "version": "0.1.0",
+  "description": "Command-line interface for the zuku Platform",
+  "type": "module",
+  "bin": {
+    "zuku": "./index.mjs"
+  },
+  "files": [
+    "index.mjs",
+    "commands/",
+    "lib/"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "lint": "node --check index.mjs commands/*.mjs lib/*.mjs",
+    "smoke": "node index.mjs --help"
+  },
+  "keywords": ["zuku", "shizuku", "cli", "ugc"],
+  "license": "SOL",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
