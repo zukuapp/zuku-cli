@@ -1,63 +1,41 @@
-﻿# zuku-cli
+# zuku-cli
 
-Command-line interface for the Shizuku (zuku) Platform.
+ZUKU(즈쿠) Jump 프로젝트를 **검증·패키징·업로드**하는 커맨드라인 도구입니다.
 
-## Installation
+> OpenAPI: [`zuku-api`](https://github.com/zukuapp/zuku-api) · 엔진 계약: [`zuku-engine-next2d`](https://github.com/zukuapp/zuku-engine-next2d)
+
+## 설치
 
 ```bash
 npm install -g zuku-cli
 ```
 
-## Usage
+## 사용
 
 ```bash
 zuku --help
 ```
 
-## Commands
+| 명령 | 설명 |
+|------|------|
+| `zuku create <name>` | Jump 프로젝트 스캐폴드 |
+| `zuku validate <path>` | `jump.manifest.json` / `zuku.manifest.json` 검증 |
+| `zuku package <path>` | 업로드용 ZIP 생성 |
+| `zuku upload <path>` | 플랫폼 업로드 |
 
-| Command | Description |
-|---------|-------------|
-| `zuku create <name>` | Create a new project |
-| `zuku validate <path>` | Validate a project manifest |
-| `zuku package <path>` | Package project for upload |
-| `zuku upload <path>` | Upload package to the platform |
-
-### zuku create
+### 예
 
 ```bash
-zuku create my-project
+zuku create my-game
+zuku validate ./my-game
+zuku package ./my-game
+# 인증: ZUKU_TOKEN 또는 ~/.zukurc
+zuku upload ./my-game.zip
 ```
 
-Creates a new zuku project directory with the required structure and manifest template.
+## 설정
 
-### zuku validate
-
-```bash
-zuku validate ./my-project
-```
-
-Validates the project manifest (`jump.manifest.json` or `zuku.manifest.json`) against the schema.
-
-### zuku package
-
-```bash
-zuku package ./my-project
-```
-
-Packages the project into a .zip file ready for upload.
-
-### zuku upload
-
-```bash
-zuku upload ./my-project.zip
-```
-
-Uploads the packaged project to the zuku Platform.
-
-## Configuration
-
-Create a `.zukurc` file in your home directory:
+`~/.zukurc`:
 
 ```json
 {
@@ -66,26 +44,21 @@ Create a `.zukurc` file in your home directory:
 }
 ```
 
-Or use environment variables:
-- `ZUKU_API_BASE` — API base URL
-- `ZUKU_TOKEN` — Authentication token
+또는 환경 변수: `ZUKU_API_BASE`, `ZUKU_TOKEN` / `ZUKU_API_KEY`
 
-## Development
+## 개발
 
 ```bash
-# Run CLI locally
 node index.mjs --help
-
-# Run tests
 npm test
 ```
 
-## Related Projects
+## 관련
 
-- [shizuku](https://github.com/zukuapp/shizuku) — Platform documentation
-- [zuku-api](https://github.com/zukuapp/zuku-api) — API spec & SDK
-- [zuku-engine-next2d](https://github.com/zukuapp/zuku-engine-next2d) — Jump game engine
+- [zuku-api](https://github.com/zukuapp/zuku-api)
+- [zuku-engine-next2d](https://github.com/zukuapp/zuku-engine-next2d)
+- [zuku-docs](https://github.com/zukuapp/zuku-docs)
 
-## License
+---
 
-Shizuku Open License (SOL)
+**ZUKU (즈쿠)** · Tresillo · [zuzunza.com](https://zuzunza.com)
