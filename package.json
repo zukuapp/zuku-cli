@@ -13,7 +13,7 @@
   ],
   "scripts": {
     "test": "node --test",
-    "lint": "node --check index.mjs commands/*.mjs lib/*.mjs",
+    "lint": "node --check index.mjs && node --check commands/create.mjs && node --check commands/validate.mjs && node --check commands/package.mjs && node --check commands/upload.mjs && node --check lib/manifest-reader.mjs && node --check lib/api-client.mjs",
     "smoke": "node index.mjs --help"
   },
   "keywords": ["zuku", "shizuku", "cli", "ugc"],
