@@ -1,156 +1,35 @@
-# ZukuJS `upload`: coordinator integration notes
+# Upload 구현과 API 계약
 
-This branch implements `commands/upload.mjs` and `lib/upload-*.mjs`. The shared files `index.mjs`, `lib/errors.mjs`, `package.json`, `tests/cli.test.mjs`, the README and the core manifest/packaging modules belong to the coordinator and are **not changed** here. Until the steps below are applied, `zuku upload ...` keeps returning `NOT_IMPLEMENTED` and performs no I/O. That happens because the legacy one-argument call `execute(args)` has no context.
+`index.mjs`는 `commands/upload.mjs`에 프로젝트 패키저와 MIT 출처를 보존한 공개 ZWF 검증기를 연결합니다. 디렉터리 입력은 `lib/upload-project.mjs`가 `package`와 같은 `checkProject` 경로로 검증·패키징합니다. 임시 패키지 파일을 만들거나 프로젝트 코드를 실행하지 않습니다.
 
-## 1. Entrypoint wiring (`index.mjs`)
+## 처리 순서
 
-Replace the shared `create/validate/package/upload` branch for `upload` with:
+1. 인수, 입력 경로·크기, ZWF2/ZIP 구조, 초안 메타데이터, multipart 길이와 영수증 디렉터리를 검사합니다.
+2. 일반 사용자 Bearer 인증을 읽습니다. 인증 설정은 [authentication.md](authentication.md)를 보세요.
+3. 고정 API 주소 `https://www.zuzunza.com/api/v1`의 `POST /uploads`에 단일 `file` 파트를 보냅니다. 정확한 `Content-Length`를 사용하며 전체 요청은 524,288,000바이트 이하여야 합니다.
+4. 응답의 URL·종류·MIME·크기·SHA-256·진입 파일·파일 수·검사 결과를 로컬 패키지와 대조합니다.
+5. `POST /contents`로 JUMP 게임 초안을 만듭니다. `jump.status=draft`, `publish_to_thread=false`를 보내며 응답도 초안 상태여야 합니다.
+6. `--verify`가 있으면 `GET /contents/{id}`로 소유자가 초안을 조회할 수 있는지 확인합니다.
 
-```js
-} else if (command === 'upload') {
-  const { default: upload } = await import('./commands/upload.mjs');
-  const core = /* coordinator's packager, see §3 */ undefined;
-  const progress = !json && stderr.isTTY ? ({ sent, total }) => stderr.write(`\rZukuJS upload ${Math.floor(sent * 100 / total)}%`) : undefined;
-  data = await upload(positional.slice(1), { signal, core, onProgress: progress });
-  if (progress) stderr.write('\n');
-}
-```
+쿠키, 리다이렉트, 자동 재시도는 사용하지 않습니다. 업로드와 초안 생성은 별개 요청이므로 두 번째 요청이 실패해도 첫 번째 업로드가 이미 저장됐을 수 있습니다. 네트워크 중단·408·5xx처럼 결과를 확정할 수 없는 경우 영수증에 확인할 상태를 남깁니다.
 
-- The returned `data` is printed through the existing `success()` envelope as `success/data/meta`.
-- Errors are `UploadError`, a subclass of `CommandError`, so the existing catch renders them unchanged. `error` may carry the additive keys `reason`, `stage`, `http_status`, `fields` and `receipt`. `toJSON()` already restricts these to safe tokens.
-- Exit codes follow the existing rules. `INVALID_INPUT` exits with 2 and `COMMAND_CANCELLED` exits with 130.
-- Update the `upload` help row to read: usage `zukujs upload <path|project> [--title T] [--description D] [--game-id ID] [--genre G] [--version X.Y.Z] [--age-rating all|12|15|18] [--tag T]... [--platform pc,mobile,tablet] [--receipt-dir DIR] [--verify]`, description `ZWF2/ZIP 검증 → 업로드 → JUMP 초안 생성 (게시하지 않음)`.
-- `--check-api` text and `diagnostics` capability flags (`package_upload: false`) are coordinator-owned. Set `package_upload: true` only after this wiring lands.
+## 컨테이너 형식과 서버 실행 형식
 
-## 2. Tests that the coordinator must update
-
-`tests/cli.test.mjs` contains the test "all prototype commands ... fail closed". It expects `upload /root/private/<token> --json` to fail with `NOT_IMPLEMENTED`. After wiring, the same call fails locally with `UPLOAD_INPUT_UNSAFE` (exit 1, no network, no path echo). Change that assertion for `upload` only. Its no-echo assertions still hold.
-
-## 3. Core packager interface (directory input)
-
-When `<path>` is a directory, upload calls an injected `core.packageProject` instead of packaging by itself:
-
-```ts
-core.packageProject(absoluteProjectDir: string, { signal?: AbortSignal }): Promise<{
-  bytes: Uint8Array,            // complete ZWF2 (preferred) or ZIP bytes, in memory
-  metadata?: {                  // optional draft defaults from the local CLI project manifest
-    title?: string, description?: string, game_id?: string, genre?: string, version?: string,
-    age_rating?: 'all'|'12'|'15'|'18', tags?: string[],
-    platform?: { pc: boolean, mobile: boolean, tablet: boolean } | 'pc,mobile'
-  }
-}>
-```
-
-- Upload always re-validates `bytes` with its own strict validator and uploads exactly those bytes. Packager output is never trusted.
-- CLI flags override `metadata`, and `metadata` overrides package defaults.
-- Errors thrown as `CommandError` keep their code. Any other error becomes `COMMAND_FAILED`.
-- The packager must not run project code or build commands. It must reject symlinks and path escapes. It must exclude `.zukujs/`, which is the default receipt directory, along with `*.receipt.json`, credentials, VCS and dependency directories.
-- Add `.zukujs/` to `.gitignore`.
-
-Without `core`, directory input fails with `UPLOAD_PACKAGER_UNAVAILABLE` before any credential read or network activity.
-
-## 4. Optional public validator
-
-`runUpload(args, { validator })` accepts the MIT `@zuku/zwf` module, which provides `inspectZwf` and `inspectZip`. When it is supplied, it runs after the built-in validator and the two must agree. The output field `package.validator` then reads `zukujs-builtin+@zuku/zwf`.
-
-`@zuku/zwf` 0.1.0 declares Node >=22 and depends on `fflate` 0.8.3. Adding it as a dependency means raising `engines.node` to `>=22` in `package.json` and the CI matrix (currently Node 20). It also means preserving the MIT attribution.
-
-The built-in validator in this branch has no dependencies and uses only Node 18-compatible APIs (`node:zlib` inflateRawSync with `maxOutputLength`, `node:crypto`). However, this branch has only been tested on Node 22. Do not advertise Node 18 compatibility until CI runs on it.
-
-## 5. Branding and binary
-
-- Errors, receipts and progress text identify the tool as **ZukuJS**. The receipt `generator.name` is `"ZukuJS"`.
-- The canonical CLI is `zukujs`, from the package `@zukujs/cli`. The `bin` entry and the package name belong to the coordinator.
-- The SOL license and metadata are untouched.
-
-## 5a. Exported API (`commands/upload.mjs`)
-
-| Export | Signature | Notes |
+| 입력 | 업로드 응답 `package.format` | 초안 `jump.package.format` |
 | --- | --- | --- |
-| `default upload` | `(args: string[], context?: object) => Promise<data>` | Without `context` it throws `NOT_IMPLEMENTED` and does no I/O. |
-| `runUpload` | `(args, { signal, core, validator, onProgress, credentials = readAccessToken, clientFactory = uploadClient, baseUrl = DEFAULT_BASE_URL, cwd = process.cwd(), now })` | `credentials`, `clientFactory`, `baseUrl` and `cwd` exist for tests only. Production wiring should pass only `signal`, `core`, `onProgress` and, optionally, `validator`. |
-| `parseUploadArgs`, `resolveMetadata`, `buildDraftBody`, `verifyUpload` | pure helpers | |
+| HTML5 ZIP | `html5` | `zip` |
+| WASM 파일을 포함한 ZIP | `wasm` | `zip` |
+| ZWF2 | `zwf` | `zwf` |
 
-Success `data`:
+ZIP의 서버 실행 형식을 컨테이너 이름 `zip`과 혼동하면 정상 업로드 응답도 거부하게 됩니다. 이 차이는 실제 백엔드 실행 파일과 격리된 데이터베이스를 사용해 검증했습니다.
 
-```json
-{ "status": "draft_created", "published": false,
-  "content": { "id": "cnt_…", "status": "draft" },
-  "package": { "format": "zwf|zip", "entry_point": "index.html", "file_count": 2, "size_bytes": 904, "sha256": "<hex>", "version": "1.0.0", "validator": "zukujs-builtin" },
-  "upload": { "url": "/uploads/YYYY-MM/<id>.zwf", "verified": true },
-  "verification": { "performed": false },
-  "receipt": { "saved": true, "path": ".zukujs/receipts/zukujs-upload-…receipt.json" } }
-```
+## 모듈 경계
 
-When `--verify` is given, `verification` becomes `{ performed: true, owner_visible, status }`. If the receipt could not be written, `receipt` becomes `{ saved: false, state, upload_url, content_id, package_sha256 }`.
+- `commands/upload.mjs`: 인수·메타데이터 우선순위, 업로드 응답 대조, 초안 생성과 선택적 조회.
+- `lib/upload-project.mjs`: 로컬 프로젝트 패키징 어댑터.
+- `lib/upload-package.mjs`: 입력 바이트에 대한 독립 검증과 서버 실행 형식 판정.
+- `lib/upload-client.mjs`: 허용된 API 주소, 길이가 정해진 multipart, 제한된 JSON 응답과 공개 오류 필드.
+- `lib/upload-receipt.mjs`: 사용자 소유 디렉터리에 배타적으로 만드는 `0600` 영수증. 인증 토큰·원격 응답 전문을 저장하지 않습니다.
+- `lib/vendor/zwf/`: 공개 ZWF 0.1.0 검증 코드와 MIT 고지.
 
-Error codes:
-
-- **Local, with no credentials or network used:**
-  - `INVALID_INPUT` (exit 2)
-  - `UPLOAD_INPUT_UNSAFE`
-  - `UPLOAD_INPUT_TOO_LARGE`
-  - `PACKAGE_INVALID`, where `reason` is one of `zip_*` / `zwf_*` / `validator_*` / `public_validator_rejected` / `packager_output`
-  - `UPLOAD_METADATA_INVALID`, where `reason` is one of `title`, `description`, `tags`, `age_rating`, `game_id`, `genre`, `version`, `platform`
-  - `UPLOAD_PACKAGER_UNAVAILABLE`
-  - `UPLOAD_RECEIPT_UNSAFE`
-  - `UNAUTHORIZED` (no token)
-  - `COMMAND_CANCELLED` (exit 130)
-- **Transport and response:**
-  - `API_ORIGIN_REJECTED`
-  - `API_UNAVAILABLE`: the connection was never established, so no receipt is written.
-  - `API_REDIRECT_REJECTED`
-  - `API_RESPONSE_INVALID`
-  - `UPLOAD_OUTCOME_UNKNOWN`
-  - `UPLOAD_RECEIPT_MISMATCH`
-  - `DRAFT_OUTCOME_UNKNOWN`
-  - `DRAFT_STATE_UNEXPECTED`
-  - `API_REQUEST_FAILED`: the remote code was unknown. The HTTP status is still reported.
-- **Public API codes, passed through only from an allowlist:**
-  - `BAD_REQUEST`
-  - `UNSAFE_PACKAGE`
-  - `INVALID_PACKAGE`
-  - `UNAUTHORIZED`
-  - `FORBIDDEN`
-  - `ACCOUNT_SUSPENDED`
-  - `GAME_UPLOAD_UNSUPPORTED`
-  - `CSRF_REJECTED`
-  - `NOT_FOUND`
-  - `PAYLOAD_TOO_LARGE`
-  - `UNSUPPORTED_MEDIA_TYPE`
-  - `VALIDATION_ERROR` (`fields` holds field names only)
-  - `MALWARE_DETECTED`
-  - `RATE_LIMITED`
-  - `INTERNAL_ERROR`
-  - `STORAGE_UNAVAILABLE`
-  - `UPLOAD_UNAVAILABLE`
-- **Additional error keys:** `reason`, `stage` (`validate|package|metadata|upload|draft|verify`), `http_status`, `fields` and `receipt`.
-- **Receipt `state` values:**
-  - `upload_outcome_unknown`
-  - `upload_unverified`
-  - `draft_not_attempted`
-  - `draft_rejected`
-  - `draft_outcome_unknown`
-  - `draft_unexpected_state`
-  - `draft_created`
-- **Ambiguous outcomes.** Responses of 5xx or 408 are treated as ambiguous, so a receipt is written and nothing is retried.
-
-New codes are defined in `lib/upload-errors.mjs` (`UploadError extends CommandError`). If the coordinator moves them into `lib/errors.mjs`, keep the same code strings.
-
-## 6. Behaviour summary (for the README)
-
-- **Local checks first.** These run in order:
-  1. Argument parsing.
-  2. An input `lstat` that rejects symlinks.
-  3. A bounded single read.
-  4. The strict ZWF2/ZIP validator.
-  5. Draft metadata rules.
-  6. A multipart length check of ≤ 524,288,000 bytes.
-  7. Receipt directory safety.
-
-  Only then is the user Bearer token read.
-- **Exactly one `POST /api/v1/uploads`.** The request carries one `file` part, `game.zwf` or `game.zip`, and an exact `Content-Length`. There are no cookies, no redirects and no retries.
-- **The upload response is verified.** The client checks status 201, `kind`, `mime`, `size`, `sha256`, `package.format`, `entry_point`, `scan=clean` and `file_count`. The URL must be `/uploads/YYYY-MM/<id>.(zwf|zip)` on the configured origin.
-- **Exactly one `POST /api/v1/contents`.** The client sends `category=jump` and `jump.status=draft` with `publish_to_thread=false`, and the response must report `data.content.jump.status == "draft"`. Publish is never called.
-- **`--verify` adds one owner `GET /api/v1/contents/{id}`.**
-- **Receipts.** A receipt is written to `.zukujs/receipts/zukujs-upload-<UTC>-<random>.receipt.json` with mode 0600, using O_EXCL and O_NOFOLLOW so it never overwrites or follows links. It is written on success and after any failure that occurs once the upload request has been sent (outcome unknown, mismatch, draft rejected or unknown, unexpected state). Definite pre-acceptance rejections write no receipt.
+`runUpload(args, context)`의 자격 증명·클라이언트 주입은 격리 테스트에 사용합니다. 일반 CLI는 고정 운영 API와 내장 패키저를 사용합니다. 검증 현황과 플랫폼 제한은 [verification.md](verification.md)를 보세요.

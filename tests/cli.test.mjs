@@ -9,7 +9,7 @@ import { spawnSync } from 'node:child_process';
 import { apiClient, DEFAULT_BASE_URL } from '../lib/api-client.mjs';
 import { readAccessToken } from '../lib/credentials.mjs';
 import { CommandError } from '../lib/errors.mjs';
-import { identity } from '../lib/identity.mjs';
+import { identity, cliVersion } from '../lib/identity.mjs';
 import { readManifest, validateManifest } from '../lib/manifest-reader.mjs';
 import diagnostics from '../commands/diagnostics.mjs';
 import { run } from '../index.mjs';
@@ -50,21 +50,21 @@ test('canonical public API and runtime identity stay distinct from CLI package v
   const result = await capture(['system.version', '--json']);
   assert.equal(result.exit, 0);
   const body = JSON.parse(result.out);
-  assert.deepEqual(body, { success: true, data: { runtime: identity.name, version: identity.version, command_protocol: identity.command_protocol, cli_version: '0.1.0' }, meta: { runtime: identity.version, protocol: identity.command_protocol } });
+  assert.deepEqual(body, { success: true, data: { runtime: identity.name, version: identity.version, command_protocol: identity.command_protocol, cli_version: cliVersion }, meta: { runtime: identity.version, protocol: identity.command_protocol } });
   assert.equal(result.err, '');
 });
-test('help aliases list supported commands and state prototype limitations', async () => {
+test('help aliases describe all implemented commands', async () => {
   for (const args of [[], ['help'], ['--help'], ['-h']]) {
     const result = await capture(args);
-    assert.equal(result.exit, 0); assert.match(result.out, /NOT_IMPLEMENTED/); assert.match(result.out, /--check-api/);
+    assert.equal(result.exit, 0); assert.doesNotMatch(result.out, /NOT_IMPLEMENTED/); assert.match(result.out, /zukujs create/); assert.match(result.out, /--check-api/);
   }
   const result = await capture(['system.help', '--json']);
   assert.equal(JSON.parse(result.out).data.some(item => item.name === 'app.status'), true);
 });
-test('all prototype commands and manifest APIs fail closed without echoing paths/tokens', async () => {
+test('project commands and manifest APIs reject invalid inputs without echoing paths/tokens', async () => {
   const upload = await capture(['upload', '/root/private/' + token, '--json']);
   assert.equal(upload.exit, 1); assert.equal(upload.out, '');
-  assert.equal(JSON.parse(upload.err).error.code, 'NOT_IMPLEMENTED');
+  assert.equal(JSON.parse(upload.err).error.code, 'UPLOAD_INPUT_UNSAFE');
   assert.equal(upload.err.includes(token), false); assert.equal(upload.err.includes('/root/private'), false);
   for (const name of ['create', 'validate', 'package']) {
     const result = await capture([name, '/root/private/' + token, '--json']);
@@ -185,6 +185,22 @@ test('env bearer overrides files, control characters rejected, service keys neve
   const data = await diagnostics({ credentials: () => readAccessToken({ environment: { ZUKU_ACCESS_TOKEN: token, SERVICE_CLIENT_SECRET: privateValue } }) });
   assert.equal(JSON.stringify(data).includes(privateValue), false);
 });
+test('ZukuJS credential names take precedence over explicit legacy aliases', async () => {
+  assert.equal(await readAccessToken({ environment: { ZUKUJS_ACCESS_TOKEN: token, ZUKU_ACCESS_TOKEN: privateValue, ZUKUJS_CREDENTIALS_FILE: '/missing' } }), token);
+  await assert.rejects(readAccessToken({ environment: { ZUKUJS_ACCESS_TOKEN: '', ZUKU_ACCESS_TOKEN: token } }), { code: 'CREDENTIALS_INVALID' });
+});
+test('default credential file uses the ZukuJS directory and explicit file aliases retain ownership checks', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'zukujs-credentials-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const file = join(dir, 'credentials.json');
+  await writeFile(file, JSON.stringify({ access_token: token }), { mode: 0o600 });
+  assert.equal(await readAccessToken({ environment: { ZUKUJS_CREDENTIALS_FILE: file, ZUKU_CREDENTIALS_FILE: '/missing' } }), token);
+  await assert.rejects(readAccessToken({ environment: { ZUKUJS_CREDENTIALS_FILE: '/missing', ZUKU_CREDENTIALS_FILE: file } }), { code: 'CREDENTIALS_UNSAFE' });
+  const { mkdir } = await import('node:fs/promises');
+  await mkdir(join(dir, '.config', 'zukujs'), { recursive: true });
+  await writeFile(join(dir, '.config', 'zukujs', 'credentials.json'), JSON.stringify({ access_token: token }), { mode: 0o600 });
+  assert.equal(await readAccessToken({ environment: {}, home: dir }), token);
+});
 test('platforms without POSIX ownership checks use env credentials or stay anonymous', async () => {
   assert.equal(await readAccessToken({ environment: {}, uid: null }), undefined);
   assert.equal(await readAccessToken({ environment: { ZUKU_ACCESS_TOKEN: token }, uid: null }), token);
@@ -205,7 +221,7 @@ test('entrypoint version/help run without dependencies and output valid protocol
 test('installed-style symlink bin executes the same canonical version command', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'zuku-cli-bin-fixture-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  const bin = join(dir, 'zuku');
+  const bin = join(dir, 'zukujs');
   await symlink(new URL('../index.mjs', import.meta.url).pathname, bin);
   const child = spawnSync(process.execPath, [bin, '--version', '--json'], { encoding: 'utf8', env: { PATH: process.env.PATH, NODE_OPTIONS: '' } });
   assert.equal(child.status, 0); assert.equal(JSON.parse(child.stdout).data.version, identity.version); assert.equal(child.stderr, '');

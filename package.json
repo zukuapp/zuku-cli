@@ -1,15 +1,16 @@
-﻿{
-  "name": "zuku-cli",
-  "version": "0.1.0",
-  "description": "Command-line interface for the zuku Platform",
+{
+  "name": "@zukujs/cli",
+  "version": "0.2.0",
+  "description": "ZukuJS project CLI for HTML5 creation, validation, packaging and draft uploads",
   "type": "module",
   "bin": {
-    "zuku": "./index.mjs"
+    "zukujs": "./index.mjs"
   },
   "files": [
     "index.mjs",
     "commands/",
     "lib/",
+    "docs/",
     "scripts/check-syntax.mjs"
   ],
   "scripts": {
@@ -20,7 +21,13 @@
   "dependencies": {
     "fflate": "0.8.3"
   },
-  "keywords": ["zuku", "shizuku", "cli", "ugc"],
+  "keywords": [
+    "zukujs",
+    "cli",
+    "html5",
+    "ugc",
+    "zwf"
+  ],
   "license": "SOL",
   "engines": {
     "node": ">=22.0.0"

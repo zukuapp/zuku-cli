@@ -9,7 +9,7 @@ export default async function diagnostics({ checkApi = false, signal, credential
     command_protocol: identity.command_protocol, cli_version: cliVersion,
     api: { origin: DEFAULT_BASE_URL, checked: false },
     authentication: { configured: Boolean(token), status: 'not_checked' },
-    capabilities: { readonly_diagnostics: true, project_create: false, package_upload: false, service_keys: false } };
+    capabilities: { readonly_diagnostics: true, project_create: true, project_validate: true, project_package: true, package_upload: true, service_keys: false } };
   if (!checkApi) return data;
   const client = await clientFactory(DEFAULT_BASE_URL, { accessToken: token, signal });
   const catalog = (await client.request('/billing/catalog')).data;

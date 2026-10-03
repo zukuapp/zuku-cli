@@ -5,10 +5,12 @@ import { CommandError } from '../lib/errors.mjs';
 import { DEFAULT_BASE_URL } from '../lib/api-client.mjs';
 import { readAccessToken } from '../lib/credentials.mjs';
 import { cliVersion } from '../lib/identity.mjs';
+import { AGE_RATINGS, DESCRIPTION_MAX, GAME_ID_PATTERN, GENRE_PATTERN, TAGS_MAX, TAG_MAX, VERSION_PATTERN } from '../lib/manifest-reader.mjs';
+import { projectPackager } from '../lib/upload-project.mjs';
 import { UploadError, asUploadError } from '../lib/upload-errors.mjs';
 import { inspectPackage, validTitle, LIMITS } from '../lib/upload-package.mjs';
 import { uploadClient, multipartFraming, MAX_MULTIPART_BYTES, CONTENT_ID } from '../lib/upload-client.mjs';
-import { prepareReceiptDir, buildReceipt, writeReceipt, DEFAULT_RECEIPT_DIR } from '../lib/upload-receipt.mjs';
+import { prepareReceiptDir, buildReceipt, writeReceipt, DEFAULT_RECEIPT_DIR, safeDraftStatus } from '../lib/upload-receipt.mjs';
 
 /*
  * zukujs upload <path>: validate a local .zwf/.zip (or package a project directory through the injected
@@ -17,10 +19,6 @@ import { prepareReceiptDir, buildReceipt, writeReceipt, DEFAULT_RECEIPT_DIR } fr
  */
 const MAX_FILE_BYTES = LIMITS.archiveBytes + 16 + LIMITS.manifestBytes;
 const UPLOAD_PATH = /^\/uploads\/[0-9]{4}-[0-9]{2}\/[A-Za-z0-9_-]{1,128}\.(zwf|zip)$/;
-const GAME_ID = /^[a-z0-9][a-z0-9_-]{2,63}$/;
-const SEMVER = /^(0|[1-9]\d{0,8})\.(0|[1-9]\d{0,8})\.(0|[1-9]\d{0,8})(?:-[0-9A-Za-z.-]{1,32})?$/;
-const GENRE = /^[a-z][a-z0-9_-]{0,31}$/;
-const AGE = new Set(['all', '12', '15', '18']);
 const PLATFORMS = ['pc', 'mobile', 'tablet'];
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const VALUE_FLAGS = new Set(['--title', '--description', '--game-id', '--genre', '--version', '--age-rating', '--tag', '--platform', '--receipt-dir']);
@@ -70,18 +68,18 @@ export function resolveMetadata(options, pkg, projectMeta = {}) {
   const bad = reason => { throw new UploadError('UPLOAD_METADATA_INVALID', { reason, stage: 'metadata' }); };
   if (!validTitle(title)) bad('title');
   const description = from('description', 'description') ?? '';
-  if (typeof description !== 'string' || [...description].length > 500 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(description)) bad('description');
+  if (typeof description !== 'string' || [...description].length > DESCRIPTION_MAX) bad('description');
   const tags = options.tags.length ? options.tags : (Array.isArray(projectMeta?.tags) ? projectMeta.tags : []);
-  if (tags.length > 10 || !tags.every(tag => typeof tag === 'string' && tag.trim() !== '' && [...tag].length <= 50 && !/[\u0000-\u001f\u007f,]/.test(tag)) || new Set(tags).size !== tags.length) bad('tags');
+  if (tags.length > TAGS_MAX || !tags.every(tag => typeof tag === 'string' && tag.trim() !== '' && [...tag].length <= TAG_MAX && !/[\u0000-\u001f\u007f]/.test(tag)) || new Set(tags).size !== tags.length) bad('tags');
   const ageRating = from('ageRating', 'age_rating') ?? 'all';
-  if (!AGE.has(ageRating)) bad('age_rating');
-  const derived = typeof title === 'string' ? 'game_' + title.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 58) : '';
-  const gameId = from('gameId', 'game_id') ?? (GAME_ID.test(derived) && derived !== 'game_' ? derived : undefined);
-  if (typeof gameId !== 'string' || !GAME_ID.test(gameId)) bad('game_id');
+  if (!AGE_RATINGS.includes(ageRating)) bad('age_rating');
+  const derived = typeof title === 'string' ? 'game_' + title.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 64) : '';
+  const gameId = from('gameId', 'game_id') ?? (GAME_ID_PATTERN.test(derived) ? derived : undefined);
+  if (typeof gameId !== 'string' || !GAME_ID_PATTERN.test(gameId)) bad('game_id');
   const genre = from('genre', 'genre') ?? 'arcade';
-  if (typeof genre !== 'string' || !GENRE.test(genre)) bad('genre');
+  if (typeof genre !== 'string' || !GENRE_PATTERN.test(genre)) bad('genre');
   const version = from('version', 'version') ?? '1.0.0';
-  if (typeof version !== 'string' || !SEMVER.test(version)) bad('version');
+  if (typeof version !== 'string' || version.length > 64 || !VERSION_PATTERN.test(version)) bad('version');
   let platform = { pc: true, mobile: false, tablet: false };
   const declared = options.platform ?? projectMeta?.platform;
   if (typeof declared === 'string') {
@@ -89,7 +87,7 @@ export function resolveMetadata(options, pkg, projectMeta = {}) {
     if (!names.length || !names.every(name => PLATFORMS.includes(name)) || new Set(names).size !== names.length) bad('platform');
     platform = Object.fromEntries(PLATFORMS.map(name => [name, names.includes(name)]));
   } else if (record(declared)) {
-    if (Object.keys(declared).some(key => !PLATFORMS.includes(key)) || !PLATFORMS.every(key => typeof declared[key] === 'boolean') || !PLATFORMS.some(key => declared[key])) bad('platform');
+    if (Object.keys(declared).some(key => !PLATFORMS.includes(key)) || !PLATFORMS.every(key => typeof declared[key] === 'boolean')) bad('platform');
     platform = { pc: declared.pc, mobile: declared.mobile, tablet: declared.tablet };
   } else if (declared !== undefined) bad('platform');
   return { title, description, tags, ageRating, gameId, genre, version, platform };
@@ -130,7 +128,7 @@ export function verifyUpload(result, pkg, apiOrigin) {
   }
   const match = typeof url === 'string' ? UPLOAD_PATH.exec(url) : null;
   const ok = Boolean(match) && match[1] === pkg.format && upload.kind === pkg.kind && upload.mime === pkg.mediaType && upload.size === pkg.size && upload.sha256 === pkg.sha256
-    && upload.package.format === pkg.format && upload.package.entry_point === pkg.entry_point && upload.package.scan === 'clean' && upload.package.file_count === pkg.file_count;
+    && upload.package.format === pkg.admission_format && upload.package.entry_point === pkg.entry_point && upload.package.scan === 'clean' && upload.package.file_count === pkg.file_count;
   return { ok, url: match ? url : undefined };
 }
 
@@ -142,7 +140,7 @@ export function verifyUpload(result, pkg, apiOrigin) {
  *   validator?: object, cwd?: string, onProgress?: Function, now?: () => Date}} context
  */
 export async function runUpload(args, context = {}) {
-  const { signal, credentials = readAccessToken, clientFactory = uploadClient, baseUrl = DEFAULT_BASE_URL, core, validator, cwd = process.cwd(), onProgress, now = () => new Date() } = context;
+  const { signal, credentials = readAccessToken, clientFactory = uploadClient, baseUrl = DEFAULT_BASE_URL, core = projectPackager, validator, cwd = process.cwd(), onProgress, now = () => new Date() } = context;
   const options = parseUploadArgs(args);
   const cancelled = () => { if (signal?.aborted) throw new UploadError('COMMAND_CANCELLED'); };
   cancelled();
@@ -215,7 +213,7 @@ export async function runUpload(args, context = {}) {
     if (record(created.envelope) && created.envelope.success === false) throw await failWithReceipt(client.apiFailure(created.status, created.envelope, 'draft'), 'draft_outcome_unknown', { upload });
     throw await failWithReceipt(new UploadError('API_RESPONSE_INVALID', { stage: 'draft', httpStatus: created.status }), 'draft_outcome_unknown', { upload });
   }
-  const draft = { content_id: content.id, status: typeof content.jump.status === 'string' ? content.jump.status : null };
+  const draft = { content_id: content.id, status: safeDraftStatus(content.jump.status) };
   if (draft.status !== 'draft') throw await failWithReceipt(new UploadError('DRAFT_STATE_UNEXPECTED', { stage: 'draft', httpStatus: created.status }), 'draft_unexpected_state', { upload, draft });
 
   // 5. Optional owner read-back (explicit --verify only), then the success receipt.
@@ -224,7 +222,7 @@ export async function runUpload(args, context = {}) {
     let read;
     try { read = await client.getContent(draft.content_id); } catch (error) { read = { error: asUploadError(error, { stage: 'verify' }) }; }
     const readContent = read.status === 200 && read.envelope?.success === true && record(read.envelope.data) ? read.envelope.data.content : undefined;
-    verification = { performed: true, owner_visible: record(readContent) && readContent.id === draft.content_id, status: record(readContent?.jump) && typeof readContent.jump.status === 'string' && /^[a-z_]{1,32}$/.test(readContent.jump.status) ? readContent.jump.status : null };
+    verification = { performed: true, owner_visible: record(readContent) && readContent.id === draft.content_id, status: safeDraftStatus(readContent?.jump?.status) };
     if (read.error) verification.error = read.error.code;
     else if (!verification.owner_visible && Number.isSafeInteger(read.status)) verification.http_status = read.status;
   }
@@ -242,11 +240,7 @@ export async function runUpload(args, context = {}) {
 const definiteRejection = result => result.status >= 400 && result.status < 500 && result.status !== 408 && record(result.envelope) && result.envelope.success === false;
 const pickRecovery = receipt => ({ state: receipt.state, upload_url: receipt.upload?.url ?? null, content_id: receipt.draft?.content_id ?? null, package_sha256: receipt.package.sha256 });
 
-/**
- * Entry used by index.mjs. Until the coordinator wires a context object (signal + output), the legacy
- * one-argument call stays a no-I/O NOT_IMPLEMENTED so no real upload can run with its result discarded.
- */
-export default async function upload(args, context) {
-  if (context === undefined) throw new CommandError('NOT_IMPLEMENTED');
+/** Entry used by index.mjs and direct consumers; built-in project packaging is available by default. */
+export default async function upload(args, context = {}) {
   return runUpload(args, context);
 }

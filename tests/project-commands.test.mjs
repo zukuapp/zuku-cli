@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, writeFile, readdir, rm, symlink, link, unlink, utimes, readlink, lstat } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, readdir, rm, symlink, link, unlink, utimes, readlink, lstat, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -289,7 +289,7 @@ test('project path that is a symlink or missing is rejected', async t => {
 test('package writes a deterministic, verified ZWF2 to dist/ by default', async t => {
   const { root, dir } = await project(t);
   const out = await packageCmd([root], { cwd: dir });
-  assert.equal(out.path, join(root, 'dist/demo-0.1.0.zwf'));
+  assert.equal(out.path, await realpath(join(root, 'dist/demo-0.1.0.zwf')));
   assert.equal(out.format, 'zwf');
   const bytes = await readFile(out.path);
   assert.equal(out.bytes, bytes.length); assert.equal(out.sha256, sha(bytes));
@@ -314,7 +314,7 @@ test('package writes a deterministic, verified ZWF2 to dist/ by default', async 
 test('package --format zip writes an inspectZip-valid deterministic ZIP', async t => {
   const { root, dir } = await project(t);
   const out = await packageCmd([root, '--format', 'zip'], { cwd: dir });
-  assert.equal(out.path, join(root, 'dist/demo-0.1.0.zip'));
+  assert.equal(out.path, await realpath(join(root, 'dist/demo-0.1.0.zip')));
   const bytes = await readFile(out.path);
   assert.equal(out.sha256, sha(bytes)); assert.equal(out.bytes, bytes.length);
   assert.equal(inspectZip(bytes).entry, 'index.html');
@@ -505,7 +505,7 @@ test('run() error envelopes: stderr only, stable meta, exit codes, no temp paths
   assert.equal(plain.out, ''); assert.match(plain.err, /^PROJECT_NOT_FOUND: /);
 });
 
-test('run() validate --json returns command data', { todo: 'requires index.mjs to return command data' }, async t => {
+test('run() validate --json returns command data', async t => {
   const { root } = await project(t);
   const result = await capture(['validate', root, '--json']);
   assert.equal(result.exit, 0);

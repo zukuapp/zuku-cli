@@ -8,8 +8,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import upload, { runUpload } from '../commands/upload.mjs';
 import { uploadClient, multipartFraming, MAX_MULTIPART_BYTES } from '../lib/upload-client.mjs';
-import { inspectPackage, LIMITS } from '../lib/upload-package.mjs';
+import { inspectPackage, inspectZip, LIMITS } from '../lib/upload-package.mjs';
 import { buildReceipt, writeReceipt, prepareReceiptDir } from '../lib/upload-receipt.mjs';
+import { projectPackager } from '../lib/upload-project.mjs';
+import { validateManifest, normalizeManifest } from '../lib/manifest-reader.mjs';
 import { buildZip, buildZwf, playableZip, sha256Hex, PLAYABLE_HTML, PLAYABLE_JS } from './upload-fixtures.mjs';
 
 const token = 'fixture_only_upload_token';
@@ -21,11 +23,12 @@ const ZWF = buildZwf(playableZip());
 const WRAPPED_ZIP = buildZip([{ path: 'release/' }, { path: 'release/index.html', data: PLAYABLE_HTML }, { path: 'release/game.js', data: PLAYABLE_JS }]);
 const pkgOf = (bytes, { zip = false, entry = 'index.html', count = 2 } = {}) => {
   const ext = zip ? 'zip' : 'zwf';
-  return { bytes, ext, name: `game.${ext}`, kind: zip ? 'archive' : 'zwf', mime: `application/${ext}`, sha: sha256Hex(bytes), size: bytes.length, entry, count };
+  const admission = zip ? (inspectZip(bytes).files.some(file => file.path.toLowerCase().endsWith('.wasm')) ? 'wasm' : 'html5') : 'zwf';
+  return { bytes, ext, admission, name: `game.${ext}`, kind: zip ? 'archive' : 'zwf', mime: `application/${ext}`, sha: sha256Hex(bytes), size: bytes.length, entry, count };
 };
 const P = pkgOf(ZWF);
 const UPLOAD_URL = '/uploads/2026-10/fx_upload_01.zwf';
-const uploadReply = (p, patch = {}) => [201, ok({ upload: { url: `/uploads/2026-10/fx_upload_01.${p.ext}`, kind: p.kind, mime: p.mime, size: p.size, sha256: p.sha, original_name: p.name, owner: { id: 'usr_private_91', email: privateValue }, ...patch, package: { format: p.ext, entry_point: p.entry, scan: 'clean', file_count: p.count, ...patch.package } } })];
+const uploadReply = (p, patch = {}) => [201, ok({ upload: { url: `/uploads/2026-10/fx_upload_01.${p.ext}`, kind: p.kind, mime: p.mime, size: p.size, sha256: p.sha, original_name: p.name, owner: { id: 'usr_private_91', email: privateValue }, ...patch, package: { format: p.admission, entry_point: p.entry, scan: 'clean', file_count: p.count, ...patch.package } } })];
 const draftReply = status => entry => [201, ok({ content: { id: 'cnt_fixture_01', author: { id: 'usr_private_91', email: privateValue }, jump: { status: status ?? JSON.parse(entry.body).jump.status } } })];
 const allRequests = [];
 const assertClean = (value, label) => {
@@ -67,13 +70,13 @@ async function workdir(t) {
   return dir;
 }
 /** Run the command against a fresh fixture + temp cwd; resolves {result|error, requests, credentialCalls, receipts}. */
-async function run(t, { pkg = P, bytes = pkg.bytes, name = pkg.name, args = [name], upload: up, contents, prepare, baseUrl, timeouts, context = {} } = {}) {
+async function run(t, { pkg = P, bytes = pkg.bytes, name = pkg.name, args = [name], upload: up, contents, prepare, baseUrl, timeouts, context = {}, command = runUpload } = {}) {
   const dir = await workdir(t);
   if (bytes) await writeFile(join(dir, name), bytes);
   await prepare?.(dir);
   const f = await fixture(t, { '/uploads': up ?? uploadReply(pkg), '/contents': contents ?? draftReply() });
   const state = { credentialCalls: 0 };
-  const outcome = await runUpload(args, {
+  const outcome = await command(args, {
     cwd: dir, baseUrl: baseUrl ?? f.origin, credentials: async () => { state.credentialCalls++; return token; },
     clientFactory: (b, o) => uploadClient(b, { ...o, allowFixtureOrigin: true, timeouts: { upload: 3000, json: 3000, ...timeouts } }), ...context,
   }).then(result => ({ result }), error => ({ error }));
@@ -127,6 +130,47 @@ test('directory input is packaged only through the injected core, then uploaded 
   assert.equal(r.result.status, 'draft_created'); assert.equal(calls, 1);
   assert.deepEqual([JSON.parse(r.requests[1].body).title, JSON.parse(r.requests[1].body).tags], ['Core Title', ['arcade']]);
 });
+test('server receipt execution format is html5/wasm for ZIP and zwf for ZWF2, with exact matching', async t => {
+  const html = pkgOf(playableZip(), { zip: true });
+  const wasm = pkgOf(playableZip([{ path: 'engine.WASM', data: new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]) }]), { zip: true, count: 3 });
+  for (const pkg of [html, wasm]) {
+    const result = await run(t, { pkg, args: ['game.zip', '--title', 'ZIP receipt format'] });
+    assert.equal(result.error, undefined);
+    assert.equal(result.result.package.format, 'zip');
+    assert.equal(JSON.parse(result.requests[1].body).jump.package.format, 'zip');
+  }
+  for (const [pkg, format] of [[html, 'zip'], [html, 'wasm'], [wasm, 'html5'], [P, 'html5'], [P, 'arbitrary']]) {
+    const r = await failed(t, 'UPLOAD_RECEIPT_MISMATCH', { pkg, args: [pkg.name, '--title', 'Strict receipt'], upload: uploadReply(pkg, { package: { format } }) });
+    assert.deepEqual(r.requests.map(q => q.path), ['/api/v1/uploads']);
+    assert.equal(r.receipts[0].json.state, 'upload_unverified');
+  }
+});
+test('default directory upload accepts canonical core project metadata without an injected packager', async t => {
+  const manifest = {
+    schema: 'zukujs-project/1', name: 'cross-command', title: 'Core Metadata',
+    version: `${'1'.repeat(60)}.0.0`, description: 'Core description\nwith lines', tags: ['a'.repeat(30), 'comma,tag'],
+    jump: { game_id: `game_${'A'.repeat(64)}`, genre: '2d_arcade', platform: { pc: true, mobile: false, tablet: false } },
+  };
+  assert.deepEqual(validateManifest(manifest), []);
+  let packaged;
+  const r = await run(t, { command: upload, bytes: null, args: ['project'],
+    prepare: async dir => {
+      const root = join(dir, 'project');
+      await mkdir(join(root, 'src'), { recursive: true });
+      await writeFile(join(root, 'zukujs.json'), JSON.stringify(manifest));
+      await writeFile(join(root, 'src', 'index.html'), PLAYABLE_HTML);
+      await writeFile(join(root, 'src', 'game.js'), PLAYABLE_JS);
+      packaged = await projectPackager.packageProject(root);
+      assert.deepEqual(packaged.metadata, normalizeManifest(manifest));
+    }, upload: () => uploadReply(pkgOf(packaged.bytes)),
+  });
+  assert.equal(r.error, undefined);
+  assert.equal(r.result.status, 'draft_created');
+  const body = JSON.parse(r.requests[1].body);
+  assert.deepEqual([body.jump.game_id, body.jump.genre, body.jump.package.version, body.tags, body.description],
+    [manifest.jump.game_id, manifest.jump.genre, manifest.version, manifest.tags, manifest.description]);
+  assert.equal(r.receipts[0].json.package.version, manifest.version);
+});
 test('no implicit publish: --verify adds one owner GET; a non-draft state is DRAFT_STATE_UNEXPECTED', async t => {
   const v = await run(t, { args: ['game.zwf', '--verify'], contents: draftReply(), upload: uploadReply(P) });
   assert.deepEqual(v.requests.map(q => `${q.method} ${q.path}`), ['POST /api/v1/uploads', 'POST /api/v1/contents', 'GET /api/v1/contents/cnt_fixture_01']);
@@ -159,11 +203,15 @@ test('local rejection (schema/hash/size/path/metadata/args) reads no credentials
     ['UPLOAD_INPUT_TOO_LARGE', { bytes: null, prepare: sparse }],
     ['UPLOAD_INPUT_UNSAFE', { bytes: null, prepare: async dir => { await writeFile(join(dir, 'real.zwf'), ZWF); await symlink('real.zwf', join(dir, 'game.zwf')); } }],
     ['UPLOAD_INPUT_UNSAFE', { bytes: null }],
-    ['UPLOAD_PACKAGER_UNAVAILABLE', { bytes: null, args: ['project'], prepare: dir => mkdir(join(dir, 'project')) }],
+    ['UPLOAD_PACKAGER_UNAVAILABLE', { bytes: null, args: ['project'], prepare: dir => mkdir(join(dir, 'project')), context: { core: {} } }],
     ['UPLOAD_METADATA_INVALID', { args: ['game.zwf', '--title', ' \t '] }, 'title'],
     ['UPLOAD_METADATA_INVALID', { args: ['game.zwf', ...Array.from({ length: 11 }, (_, i) => ['--tag', `t${i}`]).flat()] }, 'tags'],
     ['UPLOAD_METADATA_INVALID', { args: ['game.zwf', '--age-rating', '21'] }, 'age_rating'],
     ['UPLOAD_METADATA_INVALID', { args: ['game.zwf', '--platform', 'console'] }, 'platform'],
+    ['UPLOAD_METADATA_INVALID', { args: ['game.zwf', '--tag', 'a'.repeat(31)] }, 'tags'],
+    ['UPLOAD_METADATA_INVALID', { args: ['game.zwf', '--game-id', 'game_' + 'A'.repeat(65)] }, 'game_id'],
+    ['UPLOAD_METADATA_INVALID', { args: ['game.zwf', '--version', '1.0.0-beta'] }, 'version'],
+    ['UPLOAD_METADATA_INVALID', { args: ['game.zwf', '--version', '1'.repeat(61) + '.0.0'] }, 'version'],
     ['UPLOAD_METADATA_INVALID', { bytes: playableZip(), name: 'game.zip' }, 'title'],
     ['INVALID_INPUT', { args: ['game.zwf', '--publish'] }],
     ['INVALID_INPUT', { args: ['game.zwf', '--title'] }],
@@ -217,11 +265,21 @@ test('redirects are never followed; ambiguous upload redirect saves upload_outco
   assert.equal(d.requests.length, 2); assert.equal(d.receipts[0].json.state, 'draft_outcome_unknown'); assert.equal(d.receipts[0].json.upload.url, UPLOAD_URL);
 });
 test('upload ok + draft 422 VALIDATION_ERROR: fields only, draft_rejected receipt keeps upload.url, no echo', async t => {
-  const r = await failed(t, 'VALIDATION_ERROR', { contents: [422, failure('VALIDATION_ERROR', [{ field: 'title', message: token }, { field: `${privateValue}!` }])] });
+  const r = await failed(t, 'VALIDATION_ERROR', { contents: [422, failure('VALIDATION_ERROR', [{ field: 'title', message: token }, { field: token }, { field: privateValue }, { field: `${privateValue}!` }])] });
   assert.equal(r.requests.length, 2); assert.equal(r.error.httpStatus, 422); assert.deepEqual(r.error.fields, ['title']);
   const json = r.error.toJSON();
   assert.deepEqual([json.http_status, json.fields, json.receipt.saved], [422, ['title'], true]);
   assert.deepEqual([r.receipts[0].json.state, r.receipts[0].json.upload.url, r.receipts[0].json.upload.verified, r.receipts[0].json.error.code, r.receipts[0].json.error.http_status, r.receipts[0].json.draft], ['draft_rejected', UPLOAD_URL, true, 'VALIDATION_ERROR', 422, null]);
+});
+test('remote draft and owner status tokens are excluded from receipts and output', async t => {
+  const unexpected = await failed(t, 'DRAFT_STATE_UNEXPECTED', { contents: draftReply(token) });
+  assert.equal(unexpected.receipts[0].json.draft.status, null);
+  const dir = await workdir(t);
+  await writeFile(join(dir, 'game.zwf'), ZWF);
+  const f = await fixture(t, { '/uploads': uploadReply(P), '/contents': draftReply(), '/contents/cnt_fixture_01': [200, ok({ content: { id: 'cnt_fixture_01', jump: { status: token } } })] });
+  const result = await runUpload(['game.zwf', '--verify'], { cwd: dir, baseUrl: f.origin, credentials: async () => token, clientFactory: (b, o) => uploadClient(b, { ...o, allowFixtureOrigin: true }) });
+  assertClean(result, 'verified status output');
+  assert.deepEqual(result.verification, { performed: true, owner_visible: true, status: null });
 });
 test('ambiguous timeouts are never retried; connection refused is API_UNAVAILABLE with no receipt', async t => {
   const u = await failed(t, 'UPLOAD_OUTCOME_UNKNOWN', { upload: 'hang', timeouts: { upload: 200 } });
@@ -282,9 +340,9 @@ test('receipt location safety is checked before credentials/network; receipts ar
   for (const [path, options] of [[join(dir, 'alias'), {}], ['r', {}], [target, { uid: process.getuid() + 1 }]]) await assert.rejects(writeReceipt(path, receipt, { cwd: dir, ...options }), { code: 'UPLOAD_RECEIPT_UNSAFE' });
   assert.equal((await readdir(target)).length, 2);
 });
-test('legacy default export without context stays inert (NOT_IMPLEMENTED); with context it delegates', async () => {
-  await assert.rejects(upload(['game.zwf']), { code: 'NOT_IMPLEMENTED' });
-  await assert.rejects(upload(['/root/private/' + token]), error => error.code === 'NOT_IMPLEMENTED' && !String(error.stack).includes(token));
+test('default export validates input with optional context and never echoes an unsafe path', async () => {
+  await assert.rejects(upload([]), { code: 'INVALID_INPUT' });
+  await assert.rejects(upload(['/root/private/' + token]), error => error.code === 'UPLOAD_INPUT_UNSAFE' && !String(error.stack).includes(token));
   await assert.rejects(upload([], {}), { code: 'INVALID_INPUT' });
 });
 test('cancellation: pre-aborted does nothing; abort while waiting or mid-body is COMMAND_CANCELLED with no retry', async t => {
