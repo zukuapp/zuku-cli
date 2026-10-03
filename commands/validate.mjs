@@ -46,10 +46,11 @@ export const withFsErrors = async action => {
 };
 
 /** Validates a project and admits its would-be archive with zwf; returns { report, project, result }. */
-export async function checkProject(root, format) {
+export async function checkProject(root, format, stopped = () => false) {
   const { report, files, project } = await inspectProject(root);
   if (!report.valid) throw new ProjectError('PROJECT_INVALID', report.diagnostics);
-  const built = await buildArchive(root, project, files);
+  const built = await buildArchive(root, project, files, stopped);
+  if (built.cancelled) throw new ProjectError('COMMAND_CANCELLED');
   if (built.changed) throw new ProjectError('PROJECT_CHANGED');
   if (built.diagnostics) throw new ProjectError('PROJECT_INVALID', built.diagnostics);
   const result = await admit(built.zip, project, format ?? project.format);

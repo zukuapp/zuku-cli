@@ -214,7 +214,11 @@ test('source tree rejects links, special files, collisions, unsafe names and exe
     ['symlink file', async (root, dir) => { await writeFile(join(dir, 'outside.js'), ''); await symlink(join(dir, 'outside.js'), join(root, 'src/link.js')); }, 'PATH_SYMLINK', 'src/link.js'],
     ['symlink dir', async (root, dir) => { await mkdir(join(dir, 'outdir')); await symlink(join(dir, 'outdir'), join(root, 'src/lib')); }, 'PATH_SYMLINK', 'src/lib'],
     ['hard link', async (root, dir) => { await link(join(root, 'src/game.js'), join(dir, 'game-copy.js')); }, 'PATH_HARDLINK', 'src/game.js'],
-    ['case collision', async root => { await writeFile(join(root, 'src/A.js'), ''); await writeFile(join(root, 'src/a.js'), ''); }, 'PATH_CASE_COLLISION', undefined],
+    ['case collision', async root => {
+      await writeFile(join(root, 'src/A.js'), ''); await writeFile(join(root, 'src/a.js'), '');
+      // On a case-insensitive filesystem both names are one file: nothing to detect.
+      if ((await readdir(join(root, 'src'))).filter(name => name.toLowerCase() === 'a.js').length < 2) return 'skip';
+    }, 'PATH_CASE_COLLISION', undefined],
     ['percent', async root => { await writeFile(join(root, 'src/a%20.js'), ''); }, 'PATH_UNSAFE', 'src/a%20.js'],
     ['colon', async root => { await writeFile(join(root, 'src/a:b.js'), ''); }, 'PATH_UNSAFE', 'src/a:b.js'],
     ['extension', async root => { await writeFile(join(root, 'src/tool.exe'), 'x'); }, 'FILE_TYPE_UNSUPPORTED', 'src/tool.exe'],
@@ -225,7 +229,7 @@ test('source tree rejects links, special files, collisions, unsafe names and exe
   for (const [label, setup, code, path] of cases) {
     await t.test(label, async t2 => {
       const { root, dir } = await project(t2);
-      await setup(root, dir);
+      if (await setup(root, dir) === 'skip') { t2.skip('case-insensitive filesystem'); return; }
       await invalid(root, code, path);
       await rejectsWith(packageCmd([root], { cwd: root }), 'PROJECT_INVALID');
       await assert.rejects(readdir(join(root, 'dist')), { code: 'ENOENT' });
@@ -376,6 +380,43 @@ test('package honours an already-aborted signal: COMMAND_CANCELLED, nothing comm
   await noTemp(root);
 });
 
+test('package cancelled mid-build commits nothing', async t => {
+  const { root, dir } = await project(t);
+  for (let i = 0; i < 5; i++) await writeFile(join(root, `src/asset${i}.txt`), `asset ${i}`);
+  let checks = 0;
+  const signal = { get aborted() { return ++checks > 3; } }; // flips after the build has started
+  await rejectsWith(packageCmd([root], { cwd: dir, signal }), 'COMMAND_CANCELLED');
+  assert.ok(checks > 3);
+  assert.deepEqual(await readdir(join(root, 'dist')).catch(() => []), []);
+  await noTemp(root); await noTemp(dir);
+  assert.equal(process.listenerCount('SIGINT'), 0); assert.equal(process.listenerCount('SIGTERM'), 0);
+});
+
+test('package output may not reach the source tree through a symlinked alias', async t => {
+  const { root, dir } = await project(t);
+  await symlink(join(root, 'src'), join(dir, 'alias'));
+  await rejectsWith(packageCmd([root, '-o', join(dir, 'alias', 'x.zwf')], { cwd: dir }), 'OUTPUT_INVALID');
+  assert.deepEqual((await readdir(join(root, 'src'))).sort(), ['game.js', 'index.html']);
+});
+
+test('package with an unopenable temp location fails cleanly without leaking signal listeners', async t => {
+  const { root, dir } = await project(t);
+  const before = process.listenerCount('SIGINT');
+  await rejectsWith(packageCmd([root, '-o', '/proc/zukujs-test.zwf'], { cwd: dir }), 'OUTPUT_INVALID');
+  assert.equal(process.listenerCount('SIGINT'), before);
+});
+
+test('source "dist" is reserved and package.exclude matches case-insensitively', async t => {
+  const { root, dir } = await project(t);
+  await patchManifest(root, m => { m.source = 'DIST'; });
+  await invalid(root, 'MANIFEST_RESERVED', 'zukujs.json#/source');
+  await patchManifest(root, m => { m.source = 'src'; m.package.exclude = ['TOOLS']; });
+  await mkdir(join(root, 'src/tools')); await writeFile(join(root, 'src/tools/build.exe'), 'x');
+  const result = await packageCmd([root, '--format', 'zip'], { cwd: dir });
+  const names = inspectZip(await readFile(result.path)).files.map(file => file.path);
+  assert.equal(names.some(name => name.toLowerCase().startsWith('tools')), false);
+});
+
 // ---------------------------------------------------------------- validate built files
 test('validate rejects corrupted, truncated, unsafe and non-package files', async t => {
   const { root, dir } = await project(t);
@@ -424,6 +465,15 @@ test('toJumpDraft maps a created project + receipt to a JUMP draft body', async 
   for (const [patch, field] of bad) assert.throws(() => toJumpDraft(proj, { ...receipt, ...patch }), error => error instanceof JumpMetaError && error.field === field, JSON.stringify(patch));
   assert.throws(() => toJumpDraft({ ...proj, title: 'a'.repeat(101) }, receipt), { field: 'title' });
   assert.throws(() => toJumpDraft({ ...proj, description: 'x'.repeat(501) }, receipt), { field: 'description' });
+  // Project fields are re-checked, so non-normalized input fails as JumpMetaError, never TypeError.
+  for (const [patch, field] of [
+    [{ title: 'a\u0001b' }, 'title'], [{ title: '   ' }, 'title'], [{ tags: ['x', 'x'] }, 'tags'], [{ tags: ['\n'] }, 'tags'],
+    [{ game_id: 'evil id' }, 'game_id'], [{ genre: 'Arcade!' }, 'genre'], [{ version: '1.0' }, 'version'],
+    [{ platform: undefined }, 'platform'], [{ platform: { pc: true } }, 'platform'], [{ age_rating: '19' }, 'age_rating'],
+  ]) assert.throws(() => toJumpDraft({ ...proj, ...patch }, receipt), error => error instanceof JumpMetaError && error.field === field, JSON.stringify(patch));
+  assert.throws(() => toJumpDraft(null, receipt), { field: 'project' });
+  const noGenre = toJumpDraft({ ...proj, genre: null }, receipt);
+  assert.equal('genre' in noGenre.jump, false);
 });
 
 // ---------------------------------------------------------------- envelope via run()
