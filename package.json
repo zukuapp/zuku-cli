@@ -17,9 +17,12 @@
     "lint": "node scripts/check-syntax.mjs",
     "smoke": "node index.mjs --help"
   },
+  "dependencies": {
+    "fflate": "0.8.3"
+  },
   "keywords": ["zuku", "shizuku", "cli", "ugc"],
   "license": "SOL",
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.0.0"
   }
 }

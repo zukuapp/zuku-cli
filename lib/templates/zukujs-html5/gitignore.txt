@@ -1,0 +1,8 @@
+# ZukuJS: build outputs, receipts, credentials and dependencies stay out of git.
+dist/
+*.zwf
+*.zip
+.zukujs/
+node_modules/
+.env
+credentials.json

@@ -62,14 +62,31 @@ test('help aliases list supported commands and state prototype limitations', asy
   assert.equal(JSON.parse(result.out).data.some(item => item.name === 'app.status'), true);
 });
 test('all prototype commands and manifest APIs fail closed without echoing paths/tokens', async () => {
-  for (const name of ['create', 'validate', 'package', 'upload']) {
+  const upload = await capture(['upload', '/root/private/' + token, '--json']);
+  assert.equal(upload.exit, 1); assert.equal(upload.out, '');
+  assert.equal(JSON.parse(upload.err).error.code, 'NOT_IMPLEMENTED');
+  assert.equal(upload.err.includes(token), false); assert.equal(upload.err.includes('/root/private'), false);
+  for (const name of ['create', 'validate', 'package']) {
     const result = await capture([name, '/root/private/' + token, '--json']);
-    assert.equal(result.exit, 1); assert.equal(result.out, '');
-    assert.equal(JSON.parse(result.err).error.code, 'NOT_IMPLEMENTED');
+    assert.ok([1, 2].includes(result.exit), `${name} exit ${result.exit}`); assert.equal(result.out, '');
+    const body = JSON.parse(result.err);
+    assert.equal(body.success, false);
+    assert.equal(typeof body.error.code, 'string'); assert.equal(typeof body.error.message, 'string');
+    assert.notEqual(body.error.code, 'NOT_IMPLEMENTED');
+    assert.deepEqual(body.meta, { runtime: identity.version, protocol: identity.command_protocol });
     assert.equal(result.err.includes(token), false); assert.equal(result.err.includes('/root/private'), false);
   }
-  assert.throws(() => readManifest('/root/private'), { code: 'NOT_IMPLEMENTED' });
-  assert.throws(() => validateManifest({}), { code: 'NOT_IMPLEMENTED' });
+  const manifest = { schema: 'zukujs-project/1', name: 'demo', title: 'Demo', version: '0.1.0' };
+  const parsed = readManifest(new TextEncoder().encode(JSON.stringify(manifest)));
+  assert.deepEqual(parsed, { manifest, diagnostics: [] });
+  assert.deepEqual(validateManifest(manifest), []);
+  assert.throws(() => readManifest('/root/private'), error => error instanceof TypeError && !String(error.message).includes('/root/private'));
+  const problems = validateManifest({});
+  assert.ok(Array.isArray(problems));
+  assert.deepEqual(problems.map(item => item.code), ['MANIFEST_REQUIRED', 'MANIFEST_REQUIRED', 'MANIFEST_REQUIRED', 'MANIFEST_REQUIRED']);
+  const echoed = validateManifest({ schema: token, name: token, title: '/root/private\u0001', version: token });
+  assert.ok(echoed.length > 0);
+  assert.equal(JSON.stringify(echoed).includes(token), false); assert.equal(JSON.stringify(echoed).includes('/root/private'), false);
 });
 test('unknown commands/flags and injected errors emit stable redacted failures only', async () => {
   for (const args of [[token, '--json'], ['status', '--base-url', token, '--json'], ['status', '--check-api', '--check-api', '--json'], ['version', token, '--json']]) {

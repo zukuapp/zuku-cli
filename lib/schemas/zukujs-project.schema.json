@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "zukujs-project/1",
+  "title": "ZukuJS project manifest (zukujs.json)",
+  "description": "Local ZukuJS CLI project file at the project root. Not a service schema and never packaged: only the `source` directory is archived. Packages follow the ZWF2/ZIP contract of @zuku/zwf (only `title` is passed to compileZip). Game fields map to the /api/v1 JUMP draft body in lib/jump-meta.mjs. Distinct from the Next2D jump-manifest schema and the ZWF2 container manifest.",
+  "type": "object",
+  "required": ["schema", "name", "title", "version"],
+  "properties": {
+    "schema": { "const": "zukujs-project/1" },
+    "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$", "description": "Local slug; default output file name." },
+    "title": { "type": "string", "minLength": 1, "maxLength": 100, "pattern": "^(?=.*\\S)[^\\u0000-\\u001f\\u007f]*$", "description": "Counted in UTF-16 units (zwf truncates at 100); not whitespace-only." },
+    "version": { "type": "string", "maxLength": 64, "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$", "description": "JUMP package version." },
+    "description": { "type": "string", "maxLength": 500, "default": "" },
+    "tags": { "type": "array", "maxItems": 10, "uniqueItems": true, "default": [], "items": { "type": "string", "minLength": 1, "maxLength": 30, "pattern": "^(?=.*\\S)[^\\u0000-\\u001f\\u007f]*$" } },
+    "age_rating": { "enum": ["all", "12", "15", "18"], "default": "all" },
+    "source": { "type": "string", "pattern": "^[A-Za-z0-9_][A-Za-z0-9_-]{0,63}$", "default": "src", "description": "Single directory under the project root; the only packaged tree." },
+    "entry": { "enum": ["index.html", "index.htm"], "default": "index.html", "description": "At the source root; the other index variant must not exist there." },
+    "jump": {
+      "type": "object",
+      "properties": {
+        "game_id": { "type": "string", "pattern": "^game_[A-Za-z0-9_-]{1,64}$", "description": "Client game metadata, not the content ID. Default: game_<name with '-' replaced by '_'>." },
+        "genre": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$", "description": "Omitted from the draft when absent." },
+        "platform": {
+          "type": "object",
+          "required": ["pc"],
+          "properties": { "pc": { "type": "boolean" }, "mobile": { "type": "boolean" }, "tablet": { "type": "boolean" } },
+          "additionalProperties": false,
+          "description": "Declare only platforms the game actually supports. Default: pc only."
+        }
+      },
+      "additionalProperties": false
+    },
+    "package": {
+      "type": "object",
+      "properties": {
+        "format": { "enum": ["zwf", "zip"], "default": "zwf" },
+        "exclude": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "description": "Exact source-relative paths; a directory excludes its subtree. No globs.",
+          "items": { "type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^(?!/)(?!(.*/)?\\.{1,2}(/|$))(?!.*//)(?!.*/$)[^\\\\\\u0000-\\u001f\\u007f:%?#]+$" }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
