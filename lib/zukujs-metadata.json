@@ -1,0 +1,7 @@
+{
+  "name": "ZukuJS",
+  "version": "27.0.0",
+  "upstream": "16.4.0-canary.58",
+  "command_protocol": "zuku-command/1",
+  "internal_protocol": "zuku-hmac/1"
+}
