@@ -142,6 +142,9 @@ if (entrypoint) {
   process.once('SIGINT', interrupt);
   process.once('SIGTERM', interrupt);
   process.exitCode = await run(process.argv.slice(2), { signal: controller.signal });
+  // A short CLI invocation owns no background work once run() returns. Close its
+  // private Windows peer explicitly rather than waiting for the idle deadline.
+  if (process.platform === 'win32') (await import('./lib/accounts/windows-protected-store.mjs')).closeProtectedStorePeer();
   process.removeListener('SIGINT', interrupt);
   process.removeListener('SIGTERM', interrupt);
 }

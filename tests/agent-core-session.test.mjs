@@ -75,6 +75,15 @@ test('browser requires a native project grant and cannot inject actor/path/crede
   await assert.rejects(call(core, 'project.list', {}, { ...browser, origin: 'https://ai.zuzunza.com.evil.test' }), { code: 'PERMISSION_REQUIRED' });
 });
 
+test('Windows case aliases resolve to the same approved project without creating another grant', { skip: process.platform !== 'win32' }, async t => {
+  const { core, root, project } = await fixture(t);
+  const identity = await lstat(root);
+  assert.notEqual(identity.dev, 0); assert.notEqual(identity.ino, 0);
+  const sameProject = await call(core, 'project.grant', { localPath: root.toUpperCase(), purpose: 'game.maintain' });
+  assert.equal(sameProject.id, project.id);
+  assert.equal((await call(core, 'project.list')).projects.length, 1);
+});
+
 test('purpose rejection occurs before provider resolution for all transports', async t => {
   let calls = 0;
   const { core, project } = await fixture(t, { providerRuntime: { async resolveStageProvider() { calls++; throw new Error('provider must not be consulted'); } } });
