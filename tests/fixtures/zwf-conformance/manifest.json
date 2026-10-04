@@ -1,0 +1,29 @@
+{
+  "format": "zwf",
+  "version": 2,
+  "profile": "html5-sandbox/2",
+  "entry_point": "index.html",
+  "title": "Canonical game",
+  "permissions": {
+    "network": "package-only",
+    "storage": "none"
+  },
+  "zip_sha256": "5416a4a851253130f44031e8b97501a215cdd642259b6e2a284ad576b86d5433",
+  "files": [
+    {
+      "path": "index.html",
+      "size": 44,
+      "sha256": "cfa8c6e23c91742db8ad6841efd8dc96586208ec7d90526a749d56e94bf992d5"
+    },
+    {
+      "path": "assets/a/icon.png",
+      "size": 2,
+      "sha256": "a12871fee210fb8619291eaea194581cbd2531e4b23759d225f6806923f63222"
+    },
+    {
+      "path": "assets/b/icon.png",
+      "size": 2,
+      "sha256": "0ce3940bebf2b22a5d2108ecf0c368a0541c7e3c45703f8540921b4eafc82947"
+    }
+  ]
+}

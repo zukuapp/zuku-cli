@@ -145,7 +145,7 @@ test('descriptor validation rejects embedded secrets, unknown types and endpoint
   assert.throws(() => createAdapter({ ...openai, baseUrl: 'https://evil.example/v1' }), { code: 'ADAPTER_ENDPOINT_REJECTED' });
   assert.throws(() => createAdapter({ ...openai, apiType: 'mystery' }), { code: 'ADAPTER_UNKNOWN_API_TYPE' });
   assert.throws(() => createAdapter({ ...openai, apiType: 'anthropic' }), { code: 'ADAPTER_INVALID_DESCRIPTOR' });
-  assert.throws(() => createAdapter({ ...openai, apiType: 'anthropic-messages' }), { code: 'ADAPTER_UNKNOWN_API_TYPE' });
+  assert.throws(() => createAdapter({ ...openai, apiType: 'anthropic-messages' }), { code: 'ADAPTER_INVALID_DESCRIPTOR' });
   assert.throws(() => createAdapter({ id: 'mine', apiType: 'openai-chat', baseUrl: 'https://x.example/v1', options: {} }), { code: 'ADAPTER_INVALID_DESCRIPTOR' }, 'custom must be explicit');
   assert.throws(() => createAdapter({ id: 'mine', apiType: 'gemini', baseUrl: 'https://x.example/v1', options: { custom: true } }), { code: 'ADAPTER_UNKNOWN_API_TYPE' });
   assert.throws(() => createAdapter({ id: 'mine', apiType: 'openai-chat', baseUrl: 'http://10.1.1.1/v1', options: { custom: true, allowLoopbackHttp: true } }), { code: 'ADAPTER_ENDPOINT_REJECTED' });

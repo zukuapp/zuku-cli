@@ -5,17 +5,14 @@ import { isInteractive, askLine, askChoice, askSecret, readSecretFromStdin } fro
 import { validProviderId, validModelId } from '../lib/provider-system/address.mjs';
 import { validateEndpoint, HEADER_NAME, ENV_NAME } from '../lib/provider-system/endpoint.mjs';
 import { CUSTOM_API_TYPES, normalizeApiType } from '../lib/provider-system/catalog.mjs';
-import { hasSecret } from '../lib/agent-protocol/index.mjs';
-import { providerRuntimeFor, createNativePrompter, requestAuth, methodKind, CoreCliError } from '../lib/cli-core-runtime.mjs';
+import { hasSecret, PROVIDER_OPTION_ALIASES, PROVIDER_OPTION_CHECKS, normalizeProviderOptions } from '../lib/agent-protocol/schema.mjs';
+import { providerRuntimeFor, createNativePrompter, requestAuth, methodKind } from '../lib/cli-core-runtime.mjs';
 
 // Canonical API types; legacy spellings (anthropic-messages) normalize through the catalog.
 const API_TYPE_LABELS = Object.freeze({ 'openai-chat': 'OpenAI Chat Completions compatible', 'openai-responses': 'OpenAI Responses compatible', anthropic: 'Anthropic Messages compatible' });
 const ADD_FLAGS = { '--id': 'string', '--name': 'string', '--type': 'string', '--base-url': 'string', '--model': 'list', '--api-key-env': 'string', '--api-key-stdin': 'boolean', '--header-env': 'list', '--header-secret': 'list', '--option': 'list', '--disabled': 'boolean', '--non-interactive': 'boolean' };
 const CONFIGURE_FLAGS = { '--name': 'string', '--type': 'string', '--base-url': 'string', '--model': 'list', '--remove-model': 'list', '--default-model': 'string', '--region': 'string', '--project': 'string', '--location': 'string', '--option': 'list', '--api-key-env': 'string', '--clear-api-key-env': 'boolean', '--header-env': 'list', '--header-secret': 'list', '--remove-header': 'list' };
-// Finite `--option KEY=VALUE` vocabulary from the documented adapter options. `null` marks
-// adapter options the provider configuration store does not persist today.
-const OPTION_TARGETS = Object.freeze({ region: 'options', project: 'options', location: 'options', catalog: 'options', accountId: 'options', gatewayId: 'options', model: 'model', resourceName: null, wire: null, apiVersion: null, profile: null, outputTokens: null, allowLoopbackHttp: null });
-const OPTION_VALUE = /^[A-Za-z0-9][A-Za-z0-9._@-]{0,127}$/;
+const OPTION_KEYS = new Set([...Object.keys(PROVIDER_OPTION_CHECKS), ...Object.keys(PROVIDER_OPTION_ALIASES), 'model']);
 
 const apiType = value => value === undefined ? undefined : normalizeApiType(value);
 
@@ -24,14 +21,12 @@ function parseOptions(list = [], flags = {}) {
   for (const [key, value] of Object.entries(flags)) if (value !== undefined) out.options[key] = value;
   for (const item of list) {
     const eq = item.indexOf('=');
-    const key = item.slice(0, eq), value = item.slice(eq + 1);
-    if (eq < 1 || !Object.hasOwn(OPTION_TARGETS, key) || Object.hasOwn(out.options, key) || (key === 'model' && out.model !== undefined)) throw invalidInput();
+    const input = item.slice(0, eq), key = PROVIDER_OPTION_ALIASES[input] ?? input, value = item.slice(eq + 1);
+    if (eq < 1 || !OPTION_KEYS.has(input) || Object.hasOwn(out.options, key) || (key === 'model' && out.model !== undefined)) throw invalidInput();
     if (hasSecret(value)) throw new ProviderError('AUTH_SECRET_ARGUMENT');
-    if (OPTION_TARGETS[key] === null) throw new CoreCliError('PROVIDER_OPTION_UNSUPPORTED');
     if (key === 'model') { if (!validModelId(value)) throw new ProviderError('MODEL_ADDRESS_INVALID'); out.model = value; continue; }
-    // No URLs or paths: endpoints are only --base-url, validated by the runtime.
-    if (!OPTION_VALUE.test(value)) throw invalidInput();
-    out.options[key] = value;
+    const typed = key === 'maxOutputTokens' && /^[1-9][0-9]*$/.test(value) ? Number(value) : key === 'allowLoopbackHttp' && /^(true|false)$/.test(value) ? value === 'true' : value;
+    try { out.options[key] = normalizeProviderOptions({ [key]: typed })[key]; } catch { throw invalidInput(); }
   }
   return out;
 }
@@ -56,13 +51,12 @@ async function pickProvider(runtime, ctx, title) {
 /** Stores secrets: directly in the legacy runtime, or through Core's native auth sideband. */
 async function storeSecrets(runtime, id, { apiKey, headers }, ctx) {
   if (!runtime.core) return runtime.authLogin(id, { ...(apiKey ? { apiKey } : {}), ...(headers ? { headers } : {}) });
-  if (headers) throw new CoreCliError('CORE_PROTOCOL_GAP');
   const method = runtime.providers.authMethods(id).find(item => methodKind(item) === 'secret');
   if (!method) throw new ProviderError('AUTH_METHOD_UNSUPPORTED');
   const pctx = promptContext(ctx);
-  const prompter = createNativePrompter({ stderr: pctx.stderr, secret: async () => apiKey });
+  const prompter = createNativePrompter({ stderr: pctx.stderr, secret: async prompt => prompt.headerName ? headers?.[prompt.headerName] : apiKey });
   // The user is registering this custom endpoint in this native command; its (exp!) label is shown.
-  await requestAuth(runtime.core, { providerId: id, methodId: method.id, experimental: method.experimental === true && runtime.providers.get(id).custom === true, prompter, signal: ctx.signal });
+  await requestAuth(runtime.core, { providerId: id, methodId: method.id, experimental: method.experimental === true && runtime.providers.get(id).custom === true, ...(headers ? { headerNames: Object.keys(headers), includeApiKey: Boolean(apiKey) } : {}), prompter, signal: ctx.signal });
 }
 
 async function add(runtime, options, ctx) {
@@ -82,10 +76,8 @@ async function add(runtime, options, ctx) {
   const optionPatch = Object.keys(extra.options).length ? { options: extra.options } : undefined;
   // Validate transport expressibility before any configuration is written.
   if (optionPatch) runtime.checkPatch?.({ apiType: type, ...optionPatch });
-  if (Object.keys(headers).length && runtime.core) throw new CoreCliError('CORE_PROTOCOL_GAP');
-  const result = await runtime.addProvider({ id, name: name ?? id, apiType: type, baseUrl, model: models[0], apiKeyEnv: options.apiKeyEnv, headers: Object.keys(headers).length ? headers : undefined, enabled: options.disabled ? false : undefined });
+  const result = await runtime.addProvider({ id, name: name ?? id, apiType: type, baseUrl, model: models[0], apiKeyEnv: options.apiKeyEnv, headers: Object.keys(headers).length ? headers : undefined, ...(optionPatch ?? {}), enabled: options.disabled ? false : undefined });
   if (models.length > 1) await runtime.configureProvider(id, { addModels: models.slice(1).map(model => ({ id: model })) });
-  if (optionPatch) await runtime.configureProvider(id, optionPatch);
   let apiKey;
   if (options.apiKeyStdin) apiKey = await readSecretFromStdin(pctx);
   else if (interactive && !options.apiKeyEnv) {

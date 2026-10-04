@@ -51,6 +51,23 @@ const assertClean = (value, label = 'output') => {
 };
 const toolReq = { model: 'gpt-test', system: 'sys', messages: [{ role: 'user', content: '안녕 🎮' }], tools: [{ name: 'read_file', description: 'read', parameters: { type: 'object', properties: { path: { type: 'string' } }, required: ['path'] } }] };
 
+test('configured output-token ceiling reaches each native HTTP wire and respects a smaller explicit request', async t => {
+  const cases = [
+    ['openai', 'text/event-stream', sse([{ data: { type: 'response.completed', response: { id: 'resp_fixture' } } }]), body => body.max_output_tokens],
+    ['anthropic', 'text/event-stream', sse([{ data: { type: 'message_start', message: { usage: { input_tokens: 1 } } } }, { data: { type: 'message_delta', delta: { stop_reason: 'end_turn' } } }, { data: { type: 'message_stop' } }]), body => body.max_tokens],
+    ['google', 'text/event-stream', sse([{ data: { candidates: [{ finishReason: 'STOP' }] } }]), body => body.generationConfig.maxOutputTokens],
+    ['ollama', 'application/x-ndjson', JSON.stringify({ message: { role: 'assistant', content: '' }, done: true, done_reason: 'stop' }) + '\n', body => body.options.num_predict],
+  ];
+  for (const [id, contentType, response, limit] of cases) {
+    const fx = await fixture(t, stream(contentType, response));
+    const descriptor = builtin(id);
+    const client = createAdapter({ ...descriptor, options: { ...descriptor.options, maxOutputTokens: 11 } }, { ...apiKey(), testOrigin: fx.origin });
+    for (const maxOutputTokens of [37, 5]) await collect(client.stream({ model: 'fixture-model', messages: [{ role: 'user', content: 'q' }], maxOutputTokens }));
+    assert.deepEqual(fx.requests.map(request => limit(JSON.parse(request.body))), [11, 5], id);
+    assert.equal(fx.requests.length, 2, 'one call for each explicit request');
+  }
+});
+
 test('OpenAI Chat: split multibyte deltas, streamed tool-call arguments, usage, finish and request shape', async t => {
   const body = sse([
     { data: { choices: [{ index: 0, delta: { role: 'assistant', content: '게임 ' } }] } },

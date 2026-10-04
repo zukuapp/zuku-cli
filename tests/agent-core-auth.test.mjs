@@ -136,6 +136,39 @@ test('native prompt cancellation, expiry and disconnect never write an entered c
   await assert.rejects(readFile(secretsPath), { code: 'ENOENT' });
 });
 
+test('multiple native secret headers commit atomically and cancellation never writes the collected key', async t => {
+  const { native, bridge, secretsPath, host } = await fixture(t);
+  await call(native, 'provider.configure', { providerId: 'openai', patch: { headers: { 'X-First': { source: 'secret' }, 'X-Second': { source: 'secret' } } } });
+  const entered = 'fixture_atomic_private_key_123456789', prompts = [];
+  const detach = await native.attachNativePrompter(prompt => {
+    prompts.push(prompt);
+    return prompt.headerName === 'X-Second' ? { cancelled: true } : { value: entered };
+  });
+  const accepted = await call(bridge, 'auth.request', { providerId: 'openai', headerNames: ['X-First', 'X-Second'], includeApiKey: true });
+  const { job, state } = await waitAuth(bridge, accepted.authRequestId);
+  assert.equal(job.status, 'cancelled'); assert.equal(job.code, 'COMMAND_CANCELLED');
+  assert.deepEqual(prompts.map(prompt => prompt.headerName ?? 'apiKey'), ['apiKey', 'X-First', 'X-Second']);
+  assert.ok(!JSON.stringify([prompts, state]).includes(entered));
+  assert.ok(!await fileContents(host.stateDir).then(text => text.includes(entered)));
+  await assert.rejects(readFile(secretsPath), { code: 'ENOENT' });
+  await detach();
+});
+
+test('changing a secret header reference while its native prompt is pending rejects persistence', async t => {
+  const { native, bridge, secretsPath } = await fixture(t);
+  await call(native, 'provider.configure', { providerId: 'openai', patch: { headers: { 'X-First': { source: 'secret' } } } });
+  let observed, answer;
+  const seen = new Promise(resolve => { observed = resolve; });
+  await native.attachNativePrompter(prompt => { observed(prompt); return new Promise(resolve => { answer = resolve; }); });
+  const accepted = await call(bridge, 'auth.request', { providerId: 'openai', headerNames: ['X-First'] });
+  assert.equal((await seen).headerName, 'X-First');
+  await call(native, 'provider.configure', { providerId: 'openai', patch: { headers: { 'X-First': { source: 'env', env: 'FIXTURE_HEADER' } } } });
+  answer({ value: 'fixture_changed_header_123456789' });
+  const { job } = await waitAuth(bridge, accepted.authRequestId);
+  assert.equal(job.status, 'failed'); assert.equal(job.code, 'AUTH_SECRET_INVALID');
+  await assert.rejects(readFile(secretsPath), { code: 'ENOENT' });
+});
+
 test('unofficial auth requires explicit opt-in and private URLs reject wrong service or credential data', async t => {
   const { native, bridge } = await fixture(t);
   let prompts = 0; await native.attachNativePrompter(() => { prompts++; return { cancelled: true }; });
