@@ -136,7 +136,13 @@ test('separate Studio process uses actual inherited pipes and detaches from an e
   child.stdout.on('data', chunk => { bytes += chunk.toString(); if (bytes.includes('host.ready')) ready(); }); child.stderr.on('data', chunk => { stderr += chunk.toString(); });
   const stopped = new Promise((resolve, reject) => { child.once('error', reject); child.once('exit', (code, signal) => resolve({ code, signal })); });
   t.after(async () => { if (child.exitCode === null) child.kill('SIGTERM'); await stopped; await host.close(); await rm(home, { recursive: true, force: true }); });
-  await Promise.race([startup, pause(process.platform === 'win32' ? 30000 : 3000).then(() => { if (!bytes.includes('host.ready')) throw new Error('Studio process did not start'); })]);
+  const startupTimeoutMs = process.platform === 'win32' ? (process.arch === 'arm64' ? 60000 : 30000) : 3000;
+  let startupTimer;
+  try {
+    await Promise.race([startup, new Promise((_, reject) => {
+      startupTimer = setTimeout(() => reject(new Error('Studio process did not start')), startupTimeoutMs);
+    })]);
+  } finally { clearTimeout(startupTimer); }
   const request = envelope('hello'); child.stdin.write(JSON.stringify(request) + '\n');
   for (let i = 0; i < 100 && !bytes.includes(request.id); i++) await pause(5);
   const reply = bytes.trim().split('\n').map(line => JSON.parse(line)).find(message => message.id === request.id);
