@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 import create from '../commands/create.mjs';
 import { createNativePrompter, requestAuth, openCore, createCoreProviderRuntime } from '../lib/cli-core-runtime.mjs';
 import { normalizeConfig } from '../lib/provider-system/config-store.mjs';
+import { createProviderRuntime } from '../lib/provider-system/runtime.mjs';
 import { readProtectedStore } from '../lib/accounts/windows-protected-store.mjs';
 
 const repo = new URL('../', import.meta.url);
@@ -104,25 +105,27 @@ test('real CLI processes, native secret sideband and killed/restarted Core prese
   await cli(['provider', 'configure', 'azure', '--option', 'resourceName=zuku-fixture', '--option', 'deployment=game-deployment', '--option', 'apiVersion=preview', '--option', 'wire=chat', '--option', 'maxOutputTokens=32']);
   await cli(['provider', 'configure', 'cloudflare-ai-gateway', '--option', 'accountId=' + 'a'.repeat(32), '--option', 'gatewayId=zuku-fixture', '--model', 'game-model', '--option', 'maxOutputTokens=16']);
   await cli(['provider', 'configure', 'google-vertex', '--option', 'projectId=my-project-01', '--location', 'us-central1', '--model', 'game-model', '--option', 'maxOutputTokens=8', '--header-env', 'X-Org=ORG_ID']);
-  for (const providerId of ['azure', 'cloudflare-ai-gateway']) await requestAuth(core, { providerId, methodId: 'api-key', prompter: createNativePrompter({ stderr: { write() {} }, secret: async () => fixtureKey }), intervalMs: 10 });
+  for (const [providerId, max] of [['deepinfra', 4], ['venice', 3], ['perplexity', 2]]) await cli(['provider', 'configure', providerId, '--model', 'game-model', '--option', `maxOutputTokens=${max}`]);
+  for (const providerId of ['azure', 'cloudflare-ai-gateway', 'deepinfra', 'venice', 'perplexity']) await requestAuth(core, { providerId, methodId: 'api-key', prompter: createNativePrompter({ stderr: { write() {} }, secret: async () => fixtureKey }), intervalMs: 10 });
   const oldPid = child.pid;
   client.close(); const exited = once(child, 'exit'); child.kill('SIGKILL'); await exited;
   await start(); assert.notEqual(child.pid, oldPid);
   const listing = await cli(['provider', 'show', 'fixture']);
   assert.deepEqual(listing.options, { catalog: 'openai', maxOutputTokens: 64 });
   assert.equal(listing.auth.status, 'configured');
-  for (const providerId of ['fixture', 'azure', 'cloudflare-ai-gateway', 'google-vertex']) {
+  for (const providerId of ['fixture', 'azure', 'cloudflare-ai-gateway', 'google-vertex', 'deepinfra', 'venice', 'perplexity']) {
     await cli(['provider', 'use', providerId]);
     const result = await cli(['agent', 'Add a jump mechanic to my ZUKU game', ...(providerId === 'fixture' ? ['--experimental'] : [])]);
     assert.equal(result.status, 'completed'); assert.equal(result.verified, false, 'mock inference is not a verified game');
   }
   const posts = requests.filter(request => request.body);
-  assert.equal(posts.length, 4, 'exactly one inference per explicit provider, no replay/fallback');
-  assert.deepEqual(posts.map(p => p.body.max_tokens ?? p.body.max_completion_tokens ?? p.body.generationConfig?.maxOutputTokens), [64, 32, 16, 8]);
+  assert.equal(posts.length, 7, 'exactly one inference per explicit provider, no replay/fallback');
+  assert.deepEqual(posts.map(p => p.body.max_tokens ?? p.body.max_completion_tokens ?? p.body.generationConfig?.maxOutputTokens), [64, 32, 16, 8, 4, 3, 2]);
   assert.equal(posts[0].headers['x-org'], 'fixture-org'); assert.equal(posts[0].headers['x-signed'], fixtureHeader); assert.equal(posts[0].headers.authorization, `Bearer ${fixtureKey}`);
   assert.equal(posts[1].url, '/openai/v1/chat/completions?api-version=preview'); assert.equal(posts[1].body.model, 'game-deployment'); assert.equal(posts[1].headers['api-key'], fixtureKey);
   assert.equal(posts[2].url, `/v1/${'a'.repeat(32)}/zuku-fixture/compat/chat/completions`); assert.equal(posts[2].headers['cf-aig-authorization'], `Bearer ${fixtureKey}`);
   assert.equal(posts[3].url, '/v1/projects/my-project-01/locations/us-central1/publishers/google/models/game-model:streamGenerateContent?alt=sse'); assert.equal(posts[3].headers['x-goog-user-project'], 'my-project-01'); assert.equal(posts[3].headers['x-org'], 'fixture-org');
+  assert.deepEqual(posts.slice(4).map(post => post.url), ['/v1/openai/chat/completions', '/api/v1/chat/completions', '/chat/completions']);
   const config = await readFile(join(home, '.config/zukujs/providers/config.json'), 'utf8');
   assert.ok(!config.includes(fixtureKey) && !config.includes(fixtureHeader));
   const secretDir = join(home, '.config/zukujs/providers');
@@ -159,6 +162,20 @@ test('version-1 persisted aliases migrate without losing state; option types and
   assert.equal(config.providers.fixture.apiType, 'anthropic'); assert.equal(config.providers.fixture.options.maxOutputTokens, 128);
   assert.equal(normalizeConfig({ version: 1, providers: { 'amazon-bedrock': { options: { region: 'eusc-de-east-1' } } } }).providers['amazon-bedrock'].options.region, 'eusc-de-east-1');
   for (const options of [{ maxOutputTokens: '128' }, { maxOutputTokens: 0 }, { maxOutputTokens: 1000001 }, { profile: 'default' }, { resourceName: 'bad/path' }, { project: 'my-project-01', projectId: 'my-project-01' }]) assert.throws(() => normalizeConfig({ version: 1, providers: { openai: { options } } }), { code: 'PROVIDER_CONFIG_INVALID' });
+});
+
+test('adapter-only catalog registrations retain declared vendor environment references without secret projection', async t => {
+  const home = await mkdtemp(join(tmpdir(), 'zuku-adapter-catalog-'));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const environment = { DEEPINFRA_API_KEY: fixtureKey, VENICE_API_KEY: fixtureKey, PERPLEXITY_API_KEY: fixtureKey };
+  const runtime = await createProviderRuntime({ home, environment });
+  const rows = await runtime.listProviders();
+  for (const [id, envVar] of [['deepinfra', 'DEEPINFRA_API_KEY'], ['venice', 'VENICE_API_KEY'], ['perplexity', 'PERPLEXITY_API_KEY']]) {
+    assert.deepEqual(runtime.providers.get(id).env, [envVar]);
+    assert.equal(rows.find(row => row.id === id).auth.status, 'environment');
+    assert.equal(rows.find(row => row.id === id).auth.envVar, envVar);
+  }
+  assert.ok(!JSON.stringify(rows).includes(fixtureKey));
 });
 
 test('provider RPC accepts canonical and legacy Anthropic aliases and only typed header references', () => {
