@@ -24,7 +24,9 @@ const runtimeHashIndex = argv.indexOf('--official-runtime-sha256');
 const officialRuntimeSHA = runtimeHashIndex >= 0 ? argv[runtimeHashIndex + 1] : undefined;
 const windows = process.platform === 'win32';
 const ps = windows ? 'pwsh' : null;
-const work = await fs.mkdtemp(path.join(os.tmpdir(), 'zukujs-installer-ci-'));
+// macOS /var -> /private/var is a system alias. Use its canonical path in fixtures;
+// the installer still rejects links anywhere in an actual installation path.
+const work = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'zukujs-installer-ci-')));
 const resultFile = path.join(cliRoot, '.codex/installer-smoke-results.json');
 const proof = { os: process.platform, arch: process.arch, node: process.version, checks: [], productionRequests: 0, officialNodeDownload: 'not exercised by this fixture test; root verifies official release URLs/checksums separately', syntheticBootstrap: 'not run', officialRuntimeBootstrap: 'not run', status: 'running' };
 const skillNames = ['game-design', 'game-architecture', 'game-implementation', 'game-playtest', 'game-publish'];

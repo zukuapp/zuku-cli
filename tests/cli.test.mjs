@@ -210,10 +210,14 @@ test('default credential file uses the ZukuJS directory and explicit file aliase
   await writeFile(file, JSON.stringify({ access_token: token }), { mode: 0o600 });
   assert.equal(await readAccessToken({ environment: { ZUKUJS_CREDENTIALS_FILE: file, ZUKU_CREDENTIALS_FILE: '/missing' } }), token);
   await assert.rejects(readAccessToken({ environment: { ZUKUJS_CREDENTIALS_FILE: '/missing', ZUKU_CREDENTIALS_FILE: file } }), { code: 'CREDENTIALS_UNSAFE' });
-  const { mkdir } = await import('node:fs/promises');
+  const { mkdir, chmod } = await import('node:fs/promises');
   await mkdir(join(dir, '.config', 'zukujs'), { recursive: true });
+  await chmod(join(dir, '.config', 'zukujs'), 0o755);
   await writeFile(join(dir, '.config', 'zukujs', 'credentials.json'), JSON.stringify({ access_token: token }), { mode: 0o600 });
   assert.equal(await readAccessToken({ environment: {}, home: dir }), token);
+  // A present but unsafe OAuth record must not silently select legacy credentials.
+  await writeFile(join(dir, '.config', 'zukujs', 'account.json'), '{}', { mode: 0o600 });
+  await assert.rejects(readAccessToken({ environment: {}, home: dir }), { code: 'ZUKU_ACCOUNT_UNSAFE' });
 });
 test('platforms without POSIX ownership checks use env credentials or stay anonymous', async () => {
   assert.equal(await readAccessToken({ environment: {}, uid: null }), undefined);

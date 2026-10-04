@@ -82,6 +82,18 @@ jobs:
       - name: Require the exact installer-managed Node release and native architecture
         run: node --input-type=module -e "import {platformDescriptor,assertNativeHost} from './scripts/platform-build/matrix.mjs';assertNativeHost(platformDescriptor(process.argv[1]));if(process.version!=='v'+process.env.ZUKU_MANAGED_NODE)process.exit(1);console.log(JSON.stringify({platform:process.argv[1],node:process.version,arch:process.arch,native:true}))" "${{ matrix.platform }}"
 
+      - name: Stage the verified Node in a private canonical CI fixture directory
+        if: runner.os != 'Windows'
+        run: |
+          # Hosted toolcache parents can be writable; macOS /var is a system symlink.
+          # Fixtures use a real user-owned path. Product path checks stay enabled.
+          fixture=$(mktemp -d "$HOME/zuku-studio-ci.XXXXXXXX")
+          mkdir -m 700 "$fixture/tmp" "$fixture/runtime"
+          node -e "require('node:fs').copyFileSync(process.execPath,process.argv[1])" "$fixture/runtime/node"
+          chmod 755 "$fixture/runtime/node"
+          echo "$fixture/runtime" >> "$GITHUB_PATH"
+          echo "TMPDIR=$fixture/tmp" >> "$GITHUB_ENV"
+
       - name: Install locked dependencies without lifecycle scripts
         run: npm ci --ignore-scripts --no-audit --no-fund --update-notifier=false
 
