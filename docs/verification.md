@@ -21,7 +21,10 @@ npm test
 | 실제 Linux GTK/WebKit Studio GUI·공유 Core·프로젝트 선택·미리보기 | 통과, 일반 사용자 UID 65534, 샌드박스 유지 | 실제 GTK/WebKit, 네이티브 프롬프트만 합성 입력 |
 | 실제 WebKit 미리보기 HTTP 경계 | 허용 요청 2건, 경계 밖 이미지 요청 7개 모두 0건 | 일반 사용자 UID 65534, 합성 HTTP fixture |
 | NAS의 provider/Core 부분 스냅샷 회귀 | 총 103개: 96 통과, 플랫폼 전용 7 건너뜀, 실패 0 | NAS 일반 사용자, Node.js 22.22.3 |
-| GitHub CI 0.3.0 및 실제 Windows/macOS GUI | 이번 소스에서는 확인하지 않음 | 네이티브 6개 작업 설정, 실제 CI 성공은 별도 |
+| GitHub CI 0.3.0 회귀 스냅샷(`4658fb9`) | 총 565개: 532 통과, 환경·플랫폼 전용 33 건너뜀, 실패 0; lint·smoke 통과 | 실제 Ubuntu, Node.js 22 |
+| 실제 Windows DPAPI·계정/provider 경계(`4658fb9`) | 총 16개: 15 통과, 비-Windows 대체 경로 1 건너뜀, 실패 0 | 실제 GitHub Windows, Node.js 22.22.3 / PowerShell 5.1 |
+| 네이티브 Linux/macOS 네 아키텍처(`5675ff1`) | 실제 컴파일·네이티브/stdio 자체 검사·npm payload 대조·동일 패키지 해시 통과 | Linux x64/ARM64, macOS x64/ARM64 |
+| 현재 전체 여섯 네이티브 작업 및 실제 Windows/macOS GUI | Windows 빌드 포함 최종 여섯 작업은 진행 중; GUI는 별도 미확인 | 컴파일·stdio CI와 실제 GUI 검증을 구분 |
 | 실제 백엔드 `upload`: ZIP·ZWF·프로젝트 디렉터리·WASM ZIP | 32개 검사 통과 | 격리된 실제 API |
 | 실제 백엔드 기준 흐름(가입 → 업로드 → 초안) | 14개 검사 통과 | 격리된 실제 API |
 
@@ -31,6 +34,8 @@ npm test
 - 실제 Linux GUI 증적 `gui-frozen.json` SHA-256은 `55d71a736f04eed6680edd4bd4af3eae6577b1699432163b00a64d84dbd02d18`, HTTP 경계 증적 `preview-http-proof.json`은 `f1093cbe585e5c108901201775271214c6adafec390615c833a1e11e2e751393`입니다. 원본 소스·검증 증적은 NAS의 `studio-linux-native-final-20261004/linux-native-proof.tgz`에 보존했습니다. 실제 화면·Core 검증은 OAuth 로그인, 유료 추론, 게임 게시 성공을 뜻하지 않습니다.
 - NAS 부분 회귀의 `SOURCE.json` SHA-256은 `a6f81289cb24a51806e0645b336d8d41565611b9fcb90bc886887dbf4dd3c4aa`이며 입력 파일 4,102개를 확인했습니다. `RESULT.json` SHA-256은 `67d605450e3b0df06b0944b9fffe499e82cb7d9f1a4310525cb83fb95a18a423`입니다. 이 별도 스냅샷을 현재 전체 회귀나 실제 Windows 검증으로 계산하지 않았습니다.
 - Node.js 22 [GitHub CI 실행 기록](https://github.com/zukuapp/zukujs-cli/actions/runs/37154764368)은 과거 커밋 `b99b332`의 기록입니다. 현재 0.3.0 소스나 Windows 런타임 포함 배포의 CI 성공 증거로 사용하지 않습니다.
+- 0.3.0의 [실제 Ubuntu 회귀 및 Windows 자격 증명 CI](https://github.com/zukuapp/zukujs-cli/actions/runs/37176543241)는 `4658fb9` 스냅샷입니다. Windows 검사는 실제 CurrentUser DPAPI 저장·읽기·원자 교체·변조 거절, 다른 SID ACL 및 링크 거절, 잠금 직렬화, 독립 `LOCALAPPDATA`의 provider/native 계정 경계를 실행했습니다. Linux에서 Windows 검사를 건너뛴 결과를 이 통과 수에 합산하지 않았습니다.
+- [네이티브 빌드 기록](https://github.com/zukuapp/zukujs-cli/actions/runs/37176164457)은 `5675ff1`의 Linux/macOS 네 작업이 성공한 기록이며, 이후 소스 수정으로 Windows 작업은 취소됐습니다. 이 기록을 전체 여섯 플랫폼 통과로 계산하지 않습니다.
 
 ## 네트워크 없이 확인하기
 

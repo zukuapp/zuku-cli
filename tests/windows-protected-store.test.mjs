@@ -105,7 +105,7 @@ test('Windows default ZUKU login store is read from isolated LOCALAPPDATA withou
     console.log('isolated-default-store PASS');
   `;
   await new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ['--input-type=module', '--eval', program], { cwd: new URL('../', import.meta.url), env: { ...process.env, LOCALAPPDATA: appData, PSModulePath: 'C:\\unused\\zuku-untrusted-fixture-modules' }, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, ['--input-type=module', '--eval', program], { cwd: new URL('../', import.meta.url), env: { ...process.env, LOCALAPPDATA: appData, PSMODULEPATH: 'C:\\unused\\zuku-untrusted-fixture-modules' }, stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
     const timer = setTimeout(() => { child.kill(); reject(new Error('Fixture child timed out')); }, 60000);
     child.stdout.on('data', data => { output += data.toString(); });

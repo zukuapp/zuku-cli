@@ -104,7 +104,9 @@ jobs:
         run: node --test scripts/platform-build/tests/platform-build.test.mjs
 
       - name: Shared aliases, protocol and Core integration
-        run: node --test "tests/unified-aliases.test.mjs" "tests/agent-protocol-schema.test.mjs" "tests/agent-core-*.test.mjs" "tests/browser-adapter-*.test.mjs" "tests/studio-*.test.mjs"
+        # DPAPI fixtures launch a protected peer for each state operation. Bound
+        # individual integration tests so a hung subscription produces diagnostics.
+        run: node --test --test-timeout=300000 "tests/unified-aliases.test.mjs" "tests/agent-protocol-schema.test.mjs" "tests/agent-core-*.test.mjs" "tests/browser-adapter-*.test.mjs" "tests/studio-*.test.mjs"
 
       - name: Windows shell source and manifest boundaries
         if: runner.os == 'Windows'
