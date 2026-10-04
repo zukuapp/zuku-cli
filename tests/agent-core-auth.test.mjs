@@ -131,11 +131,38 @@ test('native prompt cancellation never writes an entered credential', async t =>
 
 test('native prompt expiry never writes an entered credential', async t => {
   const { native, bridge, secretsPath } = await fixture(t, { nativePromptTimeoutMs: 35 });
-  const detach = await native.attachNativePrompter(() => new Promise(() => {}));
+  let expiredSignal;
+  const detach = await native.attachNativePrompter((_prompt, { signal }) => { expiredSignal = signal; return new Promise(() => {}); });
   const accepted = await call(bridge, 'auth.request', { providerId: 'openai' });
   const timedOut = (await waitAuth(bridge, accepted.authRequestId)).job;
-  assert.equal(timedOut.status, 'failed'); assert.equal(timedOut.code, 'AUTH_PROMPT_TIMEOUT');
+  // Host timeout and the native client's expiresAt cancellation enforce the same deadline.
+  // Their winner varies by IPC scheduling; only these two exact terminal pairs are valid.
+  assert.ok([['failed', 'AUTH_PROMPT_TIMEOUT'], ['cancelled', 'COMMAND_CANCELLED']].some(([status, code]) => timedOut.status === status && timedOut.code === code));
+  assert.ok(expiredSignal);
+  if (!expiredSignal.aborted) await new Promise(resolve => expiredSignal.addEventListener('abort', resolve, { once: true }));
+  assert.equal(expiredSignal.aborted, true);
   await assert.rejects(readFile(secretsPath), { code: 'ENOENT' }); await detach();
+});
+
+test('host deadline rejects an unanswered raw native prompt and refuses a late secret reply', async t => {
+  const { host, bridge, secretsPath } = await fixture(t, { nativePromptTimeoutMs: 35 });
+  const record = await (await createCoreStorage({ stateDir: host.stateDir })).readJSON('connection');
+  const socket = createConnection(record.address); t.after(() => socket.destroy());
+  const incoming = [], waiting = []; let buffer = '';
+  socket.on('data', chunk => { buffer += chunk.toString(); let index; while ((index = buffer.indexOf('\n')) >= 0) { const message = JSON.parse(buffer.slice(0, index)); buffer = buffer.slice(index + 1); if (waiting.length) waiting.shift()(message); else incoming.push(message); } });
+  const next = () => incoming.length ? Promise.resolve(incoming.shift()) : new Promise(resolve => waiting.push(resolve));
+  await new Promise(resolve => socket.once('connect', resolve));
+  socket.write(JSON.stringify({ type: 'authenticate', protocolVersion: 1, token: record.token, clientId: 'fixture_raw_expiry' }) + '\n');
+  assert.equal((await next()).type, 'authenticated');
+  socket.write(JSON.stringify({ type: 'native-attach', id: 'fixture_attach_expiry' }) + '\n');
+  assert.equal((await next()).type, 'native-attached');
+  const accepted = await call(bridge, 'auth.request', { providerId: 'openai' });
+  const message = await next(); assert.equal(message.type, 'native-prompt');
+  const { job } = await waitAuth(bridge, accepted.authRequestId);
+  assert.equal(job.status, 'failed'); assert.equal(job.code, 'AUTH_PROMPT_TIMEOUT');
+  socket.write(JSON.stringify({ type: 'native-reply', id: message.prompt.id, reply: { value: 'fixture_expired_secret_01234567890123456789' } }) + '\n');
+  assert.equal((await next()).error.code, 'PERMISSION_REQUIRED');
+  await assert.rejects(readFile(secretsPath), { code: 'ENOENT' });
 });
 
 test('native prompt disconnect never writes an entered credential', async t => {
