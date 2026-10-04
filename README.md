@@ -1,6 +1,18 @@
-<a href="https://zukuapp.github.io/docs/">
-  <img src="https://raw.githubusercontent.com/zukuapp/.github/main/profile/assets/developer-hero.png" alt="ZukuJS 개발자 문서" width="760">
-</a>
+<!-- BEGIN ZUKU OFFICIAL BRAND -->
+<!-- markdownlint-disable MD033 MD041 -->
+<p align="center">
+  <a href="https://docs.zuzunza.com/">
+    <picture>
+      <source media="(prefers-color-scheme: dark)"
+        srcset="docs/branding/zuku-logo-dark.png">
+      <img src="docs/branding/zuku-logo-light.png"
+        alt="ZUKU" width="320">
+    </picture>
+  </a>
+</p>
+<p align="center">ZUKU - 내가 불러 일으키는 새로운 창작.</p>
+<!-- markdownlint-enable MD033 MD041 -->
+<!-- END ZUKU OFFICIAL BRAND -->
 
 # @zukujs/cli: ZUKU 통합 게임 개발 환경
 
