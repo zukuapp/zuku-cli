@@ -78,7 +78,12 @@ enum SelfTest {
             t.expect(PreviewController.validate(bad) == nil && !codec.previewURL(bad), "preview URL refused: \(bad)")
         }
         let rules = PreviewController.ruleList(prefix: good) ?? ""
-        t.expect(rules.contains(#"^http://127\\.0\\.0\\.1:45678/p/0123456789abcdef0123456789abcdef/"#) && rules.contains("ignore-previous-rules") && rules.contains("url-filter-is-case-sensitive"), "preview rule list")
+        let parsedRules = (try? JSONSerialization.jsonObject(with: Data(rules.utf8))) as? [[String: Any]]
+        let blocking = parsedRules?.first?["action"] as? [String: Any]
+        let exception = parsedRules?.last?["action"] as? [String: Any]
+        let trigger = parsedRules?.last?["trigger"] as? [String: Any]
+        let expectedPattern = #"^http://127\.0\.0\.1:45678/p/0123456789abcdef0123456789abcdef/"#
+        t.expect(parsedRules?.count == 2 && blocking?["type"] as? String == "block" && exception?["type"] as? String == "ignore-previous-rules" && trigger?["url-filter"] as? String == expectedPattern && trigger?["url-filter-is-case-sensitive"] as? Bool == true, "preview rule list")
         t.expect(PreviewController.admits(URL(string: good + "game.js"), prefix: good) && !PreviewController.admits(URL(string: "http://127.0.0.1:45678/p/ffffffffffffffffffffffffffffffff/"), prefix: good), "preview prefix")
         t.expect(ConnectURI.matches(URL(string: "zuku://ai/connect")!) && !ConnectURI.matches(URL(string: "zuku://ai/connect?token=secret")!) && !ConnectURI.matches(URL(string: "zuku://ai/connect/x")!), "connect URI exact")
 

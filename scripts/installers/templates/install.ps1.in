@@ -52,6 +52,25 @@ function Invoke-ZukuJSUserInstall {
             if ($owner -ne $sid) { throw 'Choose a directory owned by your user.' }
         }
     }
+    function New-ZukuUserDirectory([string]$Path) {
+        Assert-ZukuDirectory $Path
+        if (Test-Path -LiteralPath $Path) { return }
+        $identity = [Security.Principal.WindowsIdentity]::GetCurrent().User
+        $security = [Security.AccessControl.DirectorySecurity]::new()
+        $security.SetOwner($identity)
+        $security.SetAccessRuleProtection($true, $false)
+        $rule = [Security.AccessControl.FileSystemAccessRule]::new($identity, [Security.AccessControl.FileSystemRights]::FullControl, [Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit', [Security.AccessControl.PropagationFlags]::None, [Security.AccessControl.AccessControlType]::Allow)
+        $security.AddAccessRule($rule)
+        $info = [IO.DirectoryInfo]::new($Path)
+        if ($PSVersionTable.PSEdition -eq 'Core') { [IO.FileSystemAclExtensions]::Create($info, $security) }
+        else { $info.Create($security) }
+        # Newly created directories can retain an elevated token's default owner.
+        # Never change an existing installation's owner or any ancestor's ACL.
+        $item = Get-Item -LiteralPath $Path -Force
+        if (-not $item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'The new installation directory is unsafe.' }
+        Set-Acl -LiteralPath $Path -AclObject $security
+        Assert-ZukuDirectory $Path
+    }
     function Assert-ZukuLauncher([string]$LauncherPath) {
         if (Test-Path -LiteralPath $LauncherPath) {
             $item = Get-Item -LiteralPath $LauncherPath -Force
@@ -119,13 +138,14 @@ function Invoke-ZukuJSUserInstall {
     }
     try {
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        if (-not (Test-Path -LiteralPath $UserPrefix)) { [IO.Directory]::CreateDirectory($UserPrefix) | Out-Null; $prefixCreated = $true }
+        if (-not (Test-Path -LiteralPath $UserPrefix)) { New-ZukuUserDirectory $UserPrefix; $prefixCreated = $true }
         Assert-ZukuDirectory $UserPrefix
         try { $lockStream = [IO.File]::Open($lockPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None) }
         catch { throw 'Another installation is active. Retry after it finishes.' }
         $work = Join-Path $UserPrefix ('.install-' + [Guid]::NewGuid().ToString('N'))
         $newRelease = Join-Path $work 'release-new'
-        [IO.Directory]::CreateDirectory($newRelease) | Out-Null
+        New-ZukuUserDirectory $work
+        New-ZukuUserDirectory $newRelease
         $contractFile = Join-Path $work 'contract.json'
         [IO.File]::WriteAllText($contractFile, ($contract | ConvertTo-Json -Depth 20 -Compress), [Text.UTF8Encoding]::new($false))
         $nativeHelper = Join-Path $work 'native-helper.mjs'
@@ -169,7 +189,7 @@ function Invoke-ZukuJSUserInstall {
             $old = Get-Content -LiteralPath (Join-Path $release 'install.json') -Raw -Encoding UTF8 | ConvertFrom-Json
             if ($old.schema -ne 'zukujs-user-install/1' -or $old.version -ne $contract.cli.version -or $old.sha256 -ne $contract.cli.sha256) { throw 'The release directory belongs to another installation.' }
         }
-        if (-not (Test-Path -LiteralPath $bin)) { [IO.Directory]::CreateDirectory($bin) | Out-Null; $binCreated = $true }
+        if (-not (Test-Path -LiteralPath $bin)) { New-ZukuUserDirectory $bin; $binCreated = $true }
         Assert-ZukuDirectory $bin
         foreach ($alias in $aliases) { Assert-ZukuLauncher $launchers[$alias] }
         $entry = Join-Path $release 'npm\node_modules\@zukujs\cli\index.mjs'
@@ -184,7 +204,7 @@ function Invoke-ZukuJSUserInstall {
         }
         if (Test-Path -LiteralPath $release) { Move-Item -LiteralPath $release -Destination (Join-Path $work 'release-old') }
         $releaseChanged = $true
-        [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($release)) | Out-Null
+        New-ZukuUserDirectory ([IO.Path]::GetDirectoryName($release))
         Move-Item -LiteralPath $newRelease -Destination $release
         foreach ($alias in $aliases) {
             $launcher = $launchers[$alias]

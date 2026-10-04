@@ -241,7 +241,8 @@ for zuku_index in 0 1; do
     printf '#!/usr/bin/env bash\n# ZukuJS user installer launcher\n# prefix: %s\n' "$zuku_prefix"
     printf 'exec %q %q "$@"\n' "$zuku_final_node" "$zuku_final_dir/npm/lib/node_modules/@zukujs/cli/index.mjs"
   } > "${zuku_temp_launchers[$zuku_index]}"
-  chmod 755 -- "${zuku_temp_launchers[$zuku_index]}"
+  # The launcher path is absolute; BSD chmod does not accept GNU's -- separator.
+  chmod 755 "${zuku_temp_launchers[$zuku_index]}"
 done
 if [[ -d "$zuku_release" ]]; then mv -- "$zuku_release" "$zuku_work/release-old"; fi
 zuku_release_changed=1

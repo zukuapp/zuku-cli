@@ -186,7 +186,12 @@ test('native client autostarts a real separate shared host and disconnect leaves
   t.after(async () => {
     first?.close(); second?.close();
     if (pid) { try { process.kill(pid, 'SIGTERM'); } catch {} }
-    for (let i = 0; i < 100; i++) { if (!await readFile(join(stateDir, 'connection.json')).then(() => true, () => false)) break; await pause(10); }
+    // connection.json is removed before the host finishes its journal/lock cleanup.
+    // Wait for the actual fixture process to exit before removing its private files.
+    for (let i = 0; pid && i < 500; i++) {
+      try { process.kill(pid, 0); } catch (error) { if (error.code === 'ESRCH') break; throw error; }
+      await pause(10);
+    }
     await rm(base, { recursive: true, force: true });
   });
   first = await createCoreClient({ stateDir });

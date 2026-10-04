@@ -160,12 +160,16 @@ test('actual Windows provider DPAPI API and native default LOCALAPPDATA bridge',
     let native;
     const runtime = await createProviderRuntime({ environment: { LOCALAPPDATA: process.env.LOCALAPPDATA }, experimental: undefined, adapters: null,
       nativeZuku: (_d, ctx) => { native = ctx; return { capabilities: { stageInference: true }, runStage: async () => ({ output: {} }) }; } });
+    // Provider selection writes public configuration before secret onboarding.
+    // Its directory must already satisfy the same Windows SID-only boundary.
+    await runtime.useProvider('openai');
     const key = 'fixture-own-provider-key-123456789';
     await runtime.authLogin('openai', { apiKey: key });
     assert.ok(!(await readFile(secretFile)).includes(Buffer.from(key)));
     assert.equal((await runtime.authList()).find(row => row.provider === 'openai').status, 'configured');
     const access = 'zuku_oa_' + 'a'.repeat(64);
     await saveZukuAccount({ access_token: access, refresh_token: 'zuku_or_' + 'b'.repeat(64), scope: [...GAME_SCOPES, NATIVE_GAME_SCOPE].join(' '), expires_at: Date.now() + 3600000 });
+    await runtime.useProvider('zuku');
     await runtime.resolveStageProvider();
     assert.equal((await native.getCredentials()).accessToken, access);
     await runtime.authLogout('openai');

@@ -49,4 +49,4 @@ jobs:
           node-version: 22.22.3
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Actual Windows DPAPI and account ACL checks
-        run: node --test tests/windows-protected-store.test.mjs
+        run: node --test tests/windows-protected-store.test.mjs tests/provider-system-auth-boundary.test.mjs
