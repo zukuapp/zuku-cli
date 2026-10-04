@@ -16,9 +16,9 @@
 
 # @zukujs/cli: ZUKU 통합 게임 개발 환경
 
-ZUKU/ZukuJS 게임을 만들고 검증하는 로컬 AI 에이전트와 명령줄 도구입니다. `zuku`와 기존 `zukujs`는 같은 진입점, Agent Core, 제공자 설정, 인증과 세션을 공유합니다. 소스 버전은 0.3.0입니다.
+ZUKU/ZukuJS 게임을 만들고 검증하는 로컬 AI 에이전트와 명령줄 도구입니다. `zuku`와 기존 `zukujs`는 같은 진입점, Agent Core, 제공자 설정, 인증과 세션을 공유합니다. 소스 버전은 0.3.1입니다.
 
-> **배포 상태:** `@zukujs/cli`는 npm 레지스트리에 게시되지 않았습니다. 아래처럼 소스 체크아웃에서 실행하세요.
+> **배포 상태:** 0.3.1은 npm 배포 후보입니다. 게시 확인 전에는 아래 소스 체크아웃 방법으로 실행하세요. 기존 0.3.0 네이티브 Studio 자산은 별도이며, 이 소스 버전이 새 GUI 릴리스를 뜻하지 않습니다.
 
 ## 설치 (소스 체크아웃)
 
@@ -46,6 +46,8 @@ zukujs upload . --verify          # 업로드 후 초안 생성(공개하지 않
 `create`·`validate`·`package`는 네트워크를 쓰지 않고 프로젝트 코드를 실행하지 않습니다. `upload`는 운영 서비스 `https://www.zuzunza.com/api/v1`에 실제로 업로드하고 초안을 만듭니다. 초안은 공개 목록에 나타나지 않지만 업로드된 `/uploads/...` 파일 URL은 공개 주소입니다.
 
 `zuku agent "게임 설명"`은 게임 범위를 확인하고 필수 스킬, 빌드와 플레이테스트를 거칩니다. 공개 배포는 `agent --yolo` 또는 `deploy <path> --yolo`로 명시하며, 서버가 계정별 최근 6시간 성공 3회 한도를 적용합니다. 결과를 확인할 수 없는 게시 요청은 자동으로 다시 보내지 않습니다. 자세한 실행 조건과 복구 방법은 [게임 에이전트](docs/game-agent.md)에 있습니다.
+
+설치된 Chromium을 지정하려면 `zuku agent "게임 설명" --browser /절대/경로/chrome`을 실행하세요. 네이티브 CLI가 실행 파일을 해당 프로젝트에 승인하고, 같은 Core가 재시작 후에도 승인된 파일을 확인하여 샌드박스 플레이테스트에 사용합니다. 기존 게임 유지보수는 실제 로드·렌더링·입력 검사를 수행합니다. 자세한 권한과 검증 범위는 [통합 CLI](docs/unified-cli.md)에 있습니다.
 
 제공자와 모델은 `provider`, `model`, `auth`로 관리합니다. 비공식 Codex 인증은 명시적인 `--experimental`과 `(exp!)` 표시를 사용합니다. GTK/WebKit, AppKit/WKWebView, WPF/WebView2 Studio와 로컬 Browser Adapter는 같은 Core에 연결하며, 원격 클라우드 실행은 미정입니다. 플랫폼별 실제 검증 여부는 [검증 기록](docs/verification.md)을 확인하세요.
 
@@ -79,7 +81,7 @@ zukujs upload . --verify          # 업로드 후 초안 생성(공개하지 않
 
 ## 관련 도구
 
-- **ZWF:** [`zukuapp/zwf`](https://github.com/zukuapp/zwf)(MIT). 이 CLI는 0.1.0 구현을 고지와 함께 포함합니다.
+- **ZWF:** [`zukuapp/zwf`](https://github.com/zukuapp/zwf)(MIT). 이 CLI는 0.1.1 구현을 고지와 함께 포함합니다.
 - **API 안내:** <https://docs.zuzunza.com/>
 
 `zukujs.json`, ZWF2 매니페스트, Next2D `jump-manifest.schema.json`, API `jump` 메타데이터는 서로 다른 형식입니다.

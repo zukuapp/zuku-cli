@@ -36,6 +36,8 @@ CLI 명령은 Agent Core의 얇은 앞문입니다. 에이전트 루프, 세션 
 - `--experimental`: Experimental·비공식 인증 방식(`(exp!)`, 예: Codex, 사용자 지정 엔드포인트)으로 실행하려면 반드시 명시해야 합니다. 없으면 `AUTH_EXPERIMENTAL_OPT_IN`입니다.
 - `--yolo` / `--draft`: 세션 모드입니다. YOLO 계정 확인과 서버 한도(계정별 6시간 3회 프로덕션 게시)는 Core/오케스트레이터가 판정합니다.
 - `--resume <run_id>`: 같은 폴더의 기록으로 Core `session.input`의 `resume`을 보냅니다.
+- `--browser /절대/경로/chrome`: 네이티브 CLI가 먼저 등록된 게임 프로젝트에 실행 파일을 승인합니다. Core는 경로와 파일 신원·SHA-256을 보호된 저장소에 보관하고, 요청에는 프로젝트에 묶인 불투명 핸들만 전달합니다. Core 재시작 뒤에도 파일을 다시 확인하며, 실행 전에 파일이 바뀌면 `BROWSER_EXECUTABLE_CHANGED`로 실패합니다. 브라우저 화면이나 Studio 렌더러는 이 승인을 만들거나 사용할 수 없습니다.
+- 새 게임과 `--resume`은 게임 계획에 따른 실제 샌드박스 플레이테스트를 수행합니다. 기존 게임 유지보수의 `--browser`는 로드·렌더링·입력 검사를 수행하며, 게임 전체 규칙 검증을 의미하지 않습니다. Chromium 샌드박스, 최소 환경 변수, 네트워크·CSP 제한은 그대로 적용됩니다.
 - 범위 판정(게임 개발 목적만 허용)은 Core가 공급자 호출 전에 합니다. 거부 문구는 `This agent is restricted to ZUKU/ZUKUJS game-development tasks.`입니다.
 
 ## 제공자·모델·인증
@@ -45,14 +47,19 @@ CLI 명령은 Agent Core의 얇은 앞문입니다. 에이전트 루프, 세션 
 
 | 키 | 처리 |
 | --- | --- |
-| `region`, `location` | 저장(Core 경유) |
-| `project`, `catalog`, `accountId`, `gatewayId` | 런타임은 저장할 수 있지만 현재 Core 프로토콜로는 보낼 수 없습니다 → `CORE_PROTOCOL_GAP` |
+| `region`, `profile` | Bedrock 설정을 Core에 저장하고 SDK 요청에 적용 |
+| `project`(이전 이름 `projectId`), `location` | Vertex 프로젝트·위치 설정 |
+| `resourceName`, `deployment`, `apiVersion`, `wire` | Azure OpenAI 설정; `wire`는 `chat` 또는 `responses` |
+| `accountId`, `gatewayId` | Cloudflare AI Gateway 계정·게이트웨이 설정 |
+| `catalog` | 사용자 지정 OpenAI 호환 제공자의 모델 검색; `openai` 또는 `none` |
+| `maxOutputTokens`(이전 이름 `outputTokens`, `defaultMaxOutputTokens`) | 정수 출력 상한; ZUKU·Codex 이외 어댑터 |
+| `allowLoopbackHttp` | 사용자 지정 제공자의 루프백 HTTP 허용 여부(불리언); 엔드포인트 검사도 적용 |
 | `model` | `add`에서는 첫 모델, `configure`에서는 기본 모델 |
-| `resourceName`, `wire`, `apiVersion`, `profile`, `outputTokens`, `allowLoopbackHttp` | 어댑터 옵션이지만 설정 저장소가 보존하지 않습니다 → `PROVIDER_OPTION_UNSUPPORTED`(`allowLoopbackHttp`는 루프백 `--base-url`에서 자동으로 정해짐) |
 
-  알 수 없는 키, 중복 키, URL·경로·공백이 들어간 값은 `INVALID_INPUT`입니다. 비밀처럼 보이는 값은 `AUTH_SECRET_ARGUMENT`이며 다시 출력하지 않습니다. 거부된 요청은 아무것도 쓰지 않습니다.
+  각 옵션은 타입·길이·형식을 검사합니다. 알 수 없는 키, 중복 키, 잘못된 값은 `INVALID_INPUT`이고, 해당 어댑터가 지원하지 않는 옵션은 `PROVIDER_OPTION_UNSUPPORTED`입니다. 비밀처럼 보이는 CLI 옵션 값은 `AUTH_SECRET_ARGUMENT`이며 다시 출력하지 않습니다. 옵션 검증에 실패한 설정 요청은 저장하지 않습니다.
+- `--header-env NAME=ENV`와 `--header-secret NAME`은 헤더 값 대신 참조만 저장합니다. `configure --remove-header NAME`은 참조를 제거하고 `--clear-api-key-env`는 환경 변수 참조를 해제합니다. 모델 검색 결과와 제공자 JSON은 검색 상태·가격·설정 메타데이터를 보존하며 비밀 값은 포함하지 않습니다.
 - 모델 검색과 캐시는 기존 모델 레지스트리(Core 안)가 맡습니다.
-- `auth login`은 Core `auth.request`를 보내고 `auth.list`를 비동기로 확인합니다(최대 16분). 키·토큰은 이 프로세스의 숨김 입력(`askSecret`)이나 `--api-key-stdin` 한 줄로만 받습니다. 그 값은 Core의 네이티브 전용 보조 채널로만 전달되며 JSON 출력, 이벤트, 저널에는 들어가지 않습니다. 입력을 취소하면 저장 전에 작업이 취소됩니다.
+- `auth login`은 Core `auth.request`를 보내고 `auth.list`를 비동기로 확인합니다(최대 16분). 키·토큰은 이 프로세스의 숨김 입력(`askSecret`)이나 `--api-key-stdin` 한 줄로 받습니다. `auth login --header NAME`은 대화형 숨김 입력으로 헤더 값을 받으며 여러 번 지정할 수 있고, `--verify`는 저장 전에 제공자 검증을 요청합니다. 헤더 입력과 `--api-key-stdin`을 함께 쓸 수 없습니다. 비밀 값은 Core의 네이티브 전용 보조 채널로만 전달되며 일반·브라우저 RPC, JSON 출력, 이벤트, 저널에는 들어가지 않습니다. 여러 비밀은 모두 입력·검증된 뒤 함께 저장하며 취소되면 저장하지 않습니다.
 - ZUKU 로그인은 기기 코드 URL만 표시하며 `games:generate` 범위를 요청합니다. `--no-browser`가 없으면 공식 URL을 브라우저로 엽니다. Codex는 `--experimental`이 있어야 합니다. 사용자가 등록한 사용자 지정 엔드포인트는 메타데이터상 `(exp!)`입니다. 그 엔드포인트의 키 저장(`auth login`, `provider add`)은 사용자가 이 네이티브 명령으로 직접 등록한 것이므로 opt-in으로 봅니다.
 - 사람용 출력의 `(exp!)` 표시(TTY에서 주황색)는 인증 방식 메타데이터에서만 나옵니다. `--json`에는 ANSI 코드가 없습니다.
 
@@ -62,15 +69,12 @@ CLI 명령은 Agent Core의 얇은 앞문입니다. 에이전트 루프, 세션 
 - `agent`에 `provider`, `deploy`, `playtest`, `upload`를 명시하면 이전처럼 프로세스 안 오케스트레이터를 씁니다. `parseAgentArgs`, `runGameAgent`, `resumeGameAgent` 내보내기는 바뀌지 않았습니다.
 - `run(args, { core: { stateDir, autostart: false } })` 또는 `{ coreClient }`로 격리된 Core에 붙일 수 있습니다(`tests/cli-unified-core.test.mjs`).
 
-## Core 호환성 공백 (root 결정 필요)
+## Core 호환성과 남은 경계
 
-다음 항목은 현재 `zuku-agent/1` 스키마나 투영이 받지 않습니다. CLI는 몰래 우회하지 않고 명시적인 오류로 실패합니다.
+0.3.1은 `zuku-agent/1` 프로토콜을 유지하며 `hello`의 `provider-config/2`, `provider-header-auth/1`, `browser-grant/1` 기능으로 확장 지원을 확인합니다. 제공자 옵션·헤더 참조·환경 변수 참조 해제는 같은 Core 설정 저장소에 보존되고 재시작 후 실제 어댑터 요청에 적용됩니다. 공개 결과는 설정·모델 가격·검색 상태와 제거 결과를 전달하고, 제공자 오류는 안전한 고정 오류 코드로 보고합니다.
 
-1. `provider.configure` options 허용 키는 `region|projectId|location|deployment|apiVersion`입니다. 런타임이 저장하는 키는 `region|project|location|catalog|accountId|gatewayId`입니다. 그래서 Vertex `project`, Cloudflare `accountId`/`gatewayId`, 사용자 지정 `catalog`는 Core로 설정할 수 없습니다(`CORE_PROTOCOL_GAP`). 반대로 `apiVersion`은 런타임이 거부합니다.
-2. `provider.add`/`configure`에는 `headers`(`--header-env`, `--header-secret`, `--remove-header`)와 `apiKeyEnv: null`(`--clear-api-key-env`) 전달 수단이 없습니다.
-3. 네이티브 인증 작업은 API 키 한 개만 받고 `verify: false`로 고정되어 있습니다. 그래서 `auth login --header`와 `--verify`를 쓸 수 없습니다.
-4. `session.input`에는 플레이테스트 Chromium 경로가 없어 `agent --browser`를 쓸 수 없습니다.
-5. `projectPublicResult`가 `apiType`, `baseUrl`, `options`, `apiKeyEnv`, `missingConfiguration`, `envVar`, `headers`, `discovery`, `inputCost`/`outputCost`, `removed`/`activeReset`를 지웁니다. 그래서 Core 경유 `provider show/list`, `model list/info`, `provider remove`의 JSON은 이전 직접 실행보다 필드가 적습니다.
-6. `safeError` 허용 목록에 `ZUKU_LOGIN_REQUIRED`, `PROVIDER_EXISTS`, `PROVIDER_CONFIG_INVALID`, `AUTH_SECRET_INVALID` 같은 제공자 코드가 없습니다. 그래서 이 오류들은 `CORE_OPERATION_FAILED`로 보입니다.
-7. 프로젝트 등록은 경로마다 처음 목적(`game.maintain`/`game.init`)이 고정됩니다. 한 번 유지보수용으로 등록한 폴더에서 `agent --name`(새 게임)을 실행하면 `PERMISSION_REQUIRED`입니다.
-8. 이전 `agent`는 ZUKU 게임 폴더에서도 항상 새 게임을 만들었습니다. 지금은 Core 판정에 따라 그 폴더를 유지보수합니다. 새 게임은 `--name`이나 `init`으로 만듭니다.
+이전 Core가 필요한 기능을 광고하지 않으면 고급 설정, 헤더 인증·검증, 브라우저 승인을 보내기 전에 `CORE_PROTOCOL_GAP`로 실패합니다. Core를 최신 소스로 다시 시작한 뒤 실행하세요. 브라우저 실행 파일은 네이티브 승인 경로에서만 전달되며 `session.input`의 원시 경로·인수·환경 변수는 허용하지 않습니다.
+
+- 프로젝트 등록은 경로마다 처음 목적(`game.maintain`/`game.init`)이 고정됩니다. 한 번 유지보수용으로 등록한 폴더에서 `agent --name`(새 게임)을 실행하면 `PERMISSION_REQUIRED`입니다. 새 게임은 별도 폴더에서 만드세요.
+- 이전 `agent`는 ZUKU 게임 폴더에서도 항상 새 게임을 만들었습니다. 지금은 Core 판정에 따라 그 폴더를 유지보수합니다. 새 게임은 `--name`이나 `init`으로 만듭니다.
+- Windows·macOS 네이티브 GUI의 실제 실행 검증과 배포 자산 버전은 [플랫폼 검증 기록](verification.md)을 따릅니다. CLI 0.3.1이 기존 0.3.0 Studio 자산을 교체하거나 새 GUI 인증을 뜻하지 않습니다.

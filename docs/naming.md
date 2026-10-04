@@ -5,7 +5,7 @@
 | 대상 | 이름 |
 | --- | --- |
 | 통합 게임 개발 환경 | **ZUKU** (ZukuJS 생태계 포함) |
-| 명령줄 도구 패키지 | **`@zukujs/cli`** (소스 0.3.0) |
+| 명령줄 도구 패키지 | **`@zukujs/cli`** (소스 0.3.1) |
 | 명령 | **`zuku`**, **`zukujs`** (같은 `index.mjs`) |
 | 프레임워크 패키지·범위 | `zukujs`, `@zukujs/*` (프레임워크 이름 변경은 프레임워크 저장소에서 진행 중) |
 | 브라우저 자산 접두사(프레임워크) | `/_zukujs` (프레임워크 이름 변경과 함께 적용 예정) |
@@ -20,7 +20,7 @@ ZUKU와 ZukuJS는 같은 생태계이며 두 CLI 이름은 상태와 기능을 �
 
 | 이전 | 현재 | 호환 |
 | --- | --- | --- |
-| 패키지 `zuku-cli` 0.1.0 | `@zukujs/cli` 0.3.0 | — |
+| 패키지 `zuku-cli` 0.1.0 | `@zukujs/cli` 0.3.1 | — |
 | 명령 `zukujs` / `zuku` | 두 이름 모두 지원 | 기존 스크립트와 상태를 공유하며 이름 변경 불필요 |
 | `ZUKU_ACCESS_TOKEN` | `ZUKUJS_ACCESS_TOKEN` | 이전 이름을 명시적 별칭으로 계속 읽음(새 이름 우선) |
 | `ZUKU_CREDENTIALS_FILE` | `ZUKUJS_CREDENTIALS_FILE` | 이전 이름을 명시적 별칭으로 계속 읽음(새 이름 우선) |
