@@ -14,7 +14,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import create from '../commands/create.mjs';
 import { createNativePrompter, requestAuth, openCore, createCoreProviderRuntime } from '../lib/cli-core-runtime.mjs';
-import { normalizeConfig } from '../lib/provider-system/config-store.mjs';
+import { normalizeConfig, ConfigStore } from '../lib/provider-system/config-store.mjs';
 import { createProviderRuntime } from '../lib/provider-system/runtime.mjs';
 import { readProtectedStore } from '../lib/accounts/windows-protected-store.mjs';
 
@@ -176,6 +176,19 @@ test('adapter-only catalog registrations retain declared vendor environment refe
     assert.equal(rows.find(row => row.id === id).auth.envVar, envVar);
   }
   assert.ok(!JSON.stringify(rows).includes(fixtureKey));
+});
+
+test('adding adapter-only built-ins preserves an existing same-ID version-1 custom configuration', async t => {
+  const home = await mkdtemp(join(tmpdir(), 'zuku-provider-v1-collision-'));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const store = new ConfigStore({ dir: join(home, '.config/zukujs/providers') });
+  await store.update(config => ({ ...config, active: { provider: 'deepinfra', model: 'deepinfra/legacy-model' }, providers: { deepinfra: { custom: true, name: 'Legacy Custom', apiType: 'openai-chat', baseUrl: 'https://legacy.example.test/v1', models: [{ id: 'legacy-model' }] } } }));
+  const before = await store.read();
+  const runtime = await createProviderRuntime({ home, environment: {} });
+  assert.equal(runtime.providers.get('deepinfra').custom, true);
+  assert.equal(runtime.providers.get('deepinfra').baseUrl, 'https://legacy.example.test/v1');
+  assert.equal(runtime.activeModel, 'deepinfra/legacy-model');
+  assert.deepEqual(await store.read(), before, 'read/registration does not silently rewrite the saved identity');
 });
 
 test('provider RPC accepts canonical and legacy Anthropic aliases and only typed header references', () => {
