@@ -1,0 +1,50 @@
+name: Installer smoke
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - package.json
+      - package-lock.json
+      - index.mjs
+      - commands/**
+      - lib/**
+      - skills/**
+      - scripts/installers/**
+      - scripts/install.sh
+      - scripts/install.ps1
+      - tests/installer-smoke.mjs
+      - .github/workflows/installer-smoke.yml
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  installer:
+    name: Installer on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.3
+          cache: npm
+      - name: Install locked build dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund --update-notifier=false
+      - name: Fresh bundled archive and native installer smoke
+        run: node tests/installer-smoke.mjs --require-bootstrap
+      - name: Retain concise verification result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-smoke-${{ matrix.os }}
+          path: .codex/installer-smoke-results.json
+          if-no-files-found: warn

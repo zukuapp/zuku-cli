@@ -54,7 +54,7 @@ test('canonical public API and runtime identity stay distinct from CLI package v
   assert.equal(result.err, '');
 });
 test('help aliases describe all implemented commands', async () => {
-  for (const args of [[], ['help'], ['--help'], ['-h']]) {
+  for (const args of [['help'], ['--help'], ['-h']]) {
     const result = await capture(args);
     assert.equal(result.exit, 0); assert.doesNotMatch(result.out, /NOT_IMPLEMENTED/); assert.match(result.out, /zukujs create/); assert.match(result.out, /--check-api/);
   }
@@ -126,6 +126,11 @@ test('anonymous online diagnostics make exactly one catalog GET', async t => {
   const data = await diagnostics({ checkApi: true, credentials: async () => undefined, clientFactory: async (_, options) => f.client(options) });
   assert.equal(data.authentication.status, 'anonymous'); assert.equal(f.requests.length, 1);
 });
+test('scoped ZUKU OAuth checks its game profile and keeps generic account fields private', async () => {
+  const calls = [];
+  const result = await diagnostics({ checkApi: true, credentials: async () => 'zuku_oa_' + 'a'.repeat(64), clientFactory: async () => ({ request: async path => { calls.push(path); return envelope(catalog); } }), accountClientFactory: async () => ({ me: async () => ({ status: 200, data: envelope({ user: { id: 'usr_91', display_name: privateValue } }) }) }) });
+  assert.deepEqual(calls, ['/billing/catalog']); assert.equal(result.authentication.status, 'authenticated'); assert.equal(JSON.stringify(result).includes(privateValue), false);
+});
 test('auth requires user bearer before fetch; arbitrary paths, mutations and headers are rejected', async () => {
   let calls = 0;
   const client = await apiClient(undefined, { fetch: async () => { calls++; throw Error(token); } });
@@ -150,12 +155,21 @@ test('invalid/oversized/internal/error responses fail closed with redacted codes
 });
 test('bounded timeout and cancellation abort the same read with no automatic retry', async t => {
   const f = await fixture(t, 'slow');
-  await assert.rejects((await f.client({ timeoutMs: 20 })).request('/billing/catalog'), { code: 'API_UNAVAILABLE' });
+  const attempts = [];
+  const observedFetch = (url, options) => {
+    attempts.push(options.signal);
+    return fetch(url, options);
+  };
+  await assert.rejects((await f.client({ timeoutMs: 20, fetch: observedFetch })).request('/billing/catalog'), { code: 'API_UNAVAILABLE' });
   const controller = new AbortController();
-  const request = (await f.client({ signal: controller.signal })).request('/billing/catalog');
+  const request = (await f.client({ signal: controller.signal, fetch: observedFetch })).request('/billing/catalog');
   setTimeout(() => controller.abort(), 20);
   await assert.rejects(request, { code: 'COMMAND_CANCELLED' });
-  assert.equal(f.requests.length, 2);
+  // Under concurrent load, abort may precede the TCP connection. Count actual
+  // fetch attempts and their aborted signals rather than requiring delivery.
+  assert.equal(attempts.length, 2);
+  assert.ok(attempts.every(signal => signal.aborted));
+  assert.ok(f.requests.length <= attempts.length);
   const result = await capture(['status', '--check-api', '--json'], { signal: controller.signal });
   assert.equal(result.exit, 130); assert.equal(JSON.parse(result.err).error.code, 'COMMAND_CANCELLED');
 });

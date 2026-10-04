@@ -1,0 +1,20 @@
+<Project>
+  <!-- Shared settings for the Windows Studio shell. ZukuCliVersion must equal the
+       package.json version of the CLI release this shell is installed beside;
+       build.ps1 passes it from package.json and the locator enforces it exactly. -->
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Deterministic>true</Deterministic>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <ZukuCliVersion Condition="'$(ZukuCliVersion)' == ''">0.3.0</ZukuCliVersion>
+    <Version>$(ZukuCliVersion)</Version>
+    <Company>ZUKU</Company>
+    <Product>ZUKU Studio</Product>
+  </PropertyGroup>
+  <ItemGroup>
+    <AssemblyMetadata Include="ZukuCliVersion" Value="$(ZukuCliVersion)" />
+  </ItemGroup>
+</Project>

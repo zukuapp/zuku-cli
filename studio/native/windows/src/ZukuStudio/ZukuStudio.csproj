@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- ZUKU Studio Windows shell: WPF + Microsoft Edge WebView2 (Evergreen runtime).
+       The official RID asset includes its .NET 10 Windows Desktop runtime;
+       WebView2 Evergreen remains a separate prerequisite. See docs/studio-windows.md. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>ZukuStudio</AssemblyName>
+    <RootNamespace>Zuku.Studio</RootNamespace>
+    <StartupObject>Zuku.Studio.Program</StartupObject>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <UseAppHost>true</UseAppHost>
+    <PublishSingleFile>false</PublishSingleFile>
+    <PublishTrimmed>false</PublishTrimmed>
+    <SatelliteResourceLanguages>ko;en</SatelliteResourceLanguages>
+    <!-- Lets Linux CI compile (not run) the shell; the GUI is only exercised on Windows. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Exact pin: current stable verified 2026-10-04 from api.nuget.org flat container. -->
+    <PackageReference Include="Microsoft.Web.WebView2" Version="[1.0.4258.31]" />
+    <ProjectReference Include="..\ZukuStudio.Core\ZukuStudio.Core.csproj" />
+  </ItemGroup>
+  <!-- Fail before an incomplete publish folder becomes an installer asset. -->
+  <Target Name="VerifyAppLocalRuntime" AfterTargets="Publish">
+    <Error Condition="'$(SelfContained)' != 'true'" Text="Windows Studio assets must include the .NET 10 runtime (SelfContained=true)." />
+    <Error Condition="'$(RuntimeIdentifier)' != 'win-x64' and '$(RuntimeIdentifier)' != 'win-arm64'" Text="Windows Studio assets require win-x64 or win-arm64." />
+    <Error Condition="!Exists('$(PublishDir)ZukuStudio.exe') or !Exists('$(PublishDir)ZukuStudio.runtimeconfig.json') or !Exists('$(PublishDir)coreclr.dll') or !Exists('$(PublishDir)hostfxr.dll') or !Exists('$(PublishDir)hostpolicy.dll') or !Exists('$(PublishDir)System.Private.CoreLib.dll') or !Exists('$(PublishDir)PresentationFramework.dll')" Text="Windows Studio publish output is missing its app-local .NET/WPF runtime." />
+  </Target>
+</Project>

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=ZUKU Studio
+Comment=Local ZUKU game development workspace
+Exec=@STUDIO_EXECUTABLE@ %u
+Terminal=false
+Categories=Development;Game;
+MimeType=x-scheme-handler/zuku;
+StartupNotify=true
+DBusActivatable=false

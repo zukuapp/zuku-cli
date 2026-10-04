@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Platform-neutral protocol, routing, bounds and policy logic. No WPF, WebView2
+       or Win32 dependency, so the self-test also runs with `dotnet run` on Linux CI. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Zuku.Studio.Core</RootNamespace>
+    <AssemblyName>ZukuStudio.Core</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="protocol-manifest.json" LogicalName="Zuku.Studio.Core.protocol-manifest.json" />
+  </ItemGroup>
+</Project>

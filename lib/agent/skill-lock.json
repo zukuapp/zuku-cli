@@ -1,0 +1,28 @@
+{
+  "schema": "zukujs-skill-lock/1",
+  "pack": "zukujs-game-skills",
+  "version": "1.0.0",
+  "pack_sha256": "f4c233131bab85f11c58638ba0a5fefcde4309669ca895b25791548b2f8e03b3",
+  "skills": {
+    "game-design": {
+      "version": "1.0.0",
+      "sha256": "8a29061a0f9a538f89acaa505b3a09c53d493b77997651c69bfbc51c295b988b"
+    },
+    "game-architecture": {
+      "version": "1.0.0",
+      "sha256": "3992cfe1e01bc2f6d78e58e1e2762417ad6695d7c373086dc28fb9362e62e633"
+    },
+    "game-implementation": {
+      "version": "1.0.0",
+      "sha256": "c94e3cf89e6ac960b7d327bf1c6e6fa40dcc0a2a3cb9789d16bde0880d7ab629"
+    },
+    "game-playtest": {
+      "version": "1.0.0",
+      "sha256": "24700793c7d0b502aac1363a0ff38e244977f0b88451f254bbd238db920fa805"
+    },
+    "game-publish": {
+      "version": "1.0.0",
+      "sha256": "344a9f8d2490e8591ac4c9227a8514e26ea0b92b933e56e4d678658aab09fcaa"
+    }
+  }
+}

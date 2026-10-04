@@ -1,0 +1,8 @@
+studio/native/**/build/
+studio/native/**/bin/
+studio/native/**/obj/
+*.log
+.env*
+.codex/
+.zukujs/
+*.receipt.json

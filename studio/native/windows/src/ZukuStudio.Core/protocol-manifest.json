@@ -1,0 +1,538 @@
+{
+  "generatedFrom": [
+    "lib/agent-protocol/schema.mjs",
+    "studio/native/bridge.js"
+  ],
+  "protocolVersion": 1,
+  "limits": {
+    "requestBytes": 65536,
+    "eventBytes": 32768,
+    "textBytes": 8192,
+    "depth": 12,
+    "promptChars": 4000
+  },
+  "rendererMethods": {
+    "auth.list": {
+      "required": [],
+      "optional": []
+    },
+    "auth.logout": {
+      "required": [
+        "providerId"
+      ],
+      "optional": []
+    },
+    "auth.request": {
+      "required": [
+        "providerId"
+      ],
+      "optional": [
+        "experimental",
+        "methodId"
+      ]
+    },
+    "game.preview": {
+      "required": [
+        "projectHandle"
+      ],
+      "optional": []
+    },
+    "game.run": {
+      "required": [
+        "projectHandle"
+      ],
+      "optional": []
+    },
+    "game.stop": {
+      "required": [
+        "projectHandle"
+      ],
+      "optional": []
+    },
+    "hello": {
+      "required": [],
+      "optional": [
+        "clientVersion"
+      ]
+    },
+    "model.info": {
+      "required": [
+        "modelAddress"
+      ],
+      "optional": [
+        "refresh"
+      ]
+    },
+    "model.list": {
+      "required": [],
+      "optional": [
+        "providerId",
+        "refresh"
+      ]
+    },
+    "model.use": {
+      "required": [
+        "modelAddress"
+      ],
+      "optional": []
+    },
+    "project.list": {
+      "required": [],
+      "optional": []
+    },
+    "project.patch": {
+      "required": [
+        "content",
+        "expectedSha256",
+        "path",
+        "projectHandle"
+      ],
+      "optional": []
+    },
+    "project.read": {
+      "required": [
+        "path",
+        "projectHandle"
+      ],
+      "optional": []
+    },
+    "project.search": {
+      "required": [
+        "projectHandle",
+        "query"
+      ],
+      "optional": [
+        "path"
+      ]
+    },
+    "provider.add": {
+      "required": [
+        "config"
+      ],
+      "optional": []
+    },
+    "provider.configure": {
+      "required": [
+        "patch",
+        "providerId"
+      ],
+      "optional": []
+    },
+    "provider.disable": {
+      "required": [
+        "providerId"
+      ],
+      "optional": []
+    },
+    "provider.enable": {
+      "required": [
+        "providerId"
+      ],
+      "optional": []
+    },
+    "provider.list": {
+      "required": [],
+      "optional": []
+    },
+    "provider.remove": {
+      "required": [
+        "providerId"
+      ],
+      "optional": []
+    },
+    "provider.use": {
+      "required": [
+        "providerId"
+      ],
+      "optional": []
+    },
+    "session.cancel": {
+      "required": [
+        "sessionId"
+      ],
+      "optional": [
+        "requestId"
+      ]
+    },
+    "session.close": {
+      "required": [
+        "sessionId"
+      ],
+      "optional": []
+    },
+    "session.create": {
+      "required": [
+        "projectHandle"
+      ],
+      "optional": [
+        "mode",
+        "modelAddress"
+      ]
+    },
+    "session.get": {
+      "required": [
+        "sessionId"
+      ],
+      "optional": []
+    },
+    "session.input": {
+      "required": [
+        "operation",
+        "request",
+        "requestId",
+        "sessionId"
+      ],
+      "optional": [
+        "experimental",
+        "modelAddress",
+        "name",
+        "resume"
+      ]
+    },
+    "session.list": {
+      "required": [],
+      "optional": [
+        "projectHandle"
+      ]
+    }
+  },
+  "nativePrivate": [
+    "native.authResponse",
+    "native.pairingDecision",
+    "native.projectChosen",
+    "native.resolvePreview",
+    "preview.read",
+    "project.grant",
+    "studio.open"
+  ],
+  "events": {
+    "agent.cancelled": {
+      "required": [
+        "code",
+        "state"
+      ],
+      "optional": []
+    },
+    "agent.completed": {
+      "required": [
+        "status",
+        "verified"
+      ],
+      "optional": [
+        "contentId",
+        "digests",
+        "evidenceIds",
+        "published",
+        "runId",
+        "usage"
+      ]
+    },
+    "agent.delta": {
+      "required": [
+        "blockId",
+        "text"
+      ],
+      "optional": []
+    },
+    "agent.error": {
+      "required": [
+        "code",
+        "state"
+      ],
+      "optional": [
+        "action"
+      ]
+    },
+    "agent.reasoning_status": {
+      "required": [
+        "phase"
+      ],
+      "optional": []
+    },
+    "agent.started": {
+      "required": [
+        "operation",
+        "requestId"
+      ],
+      "optional": [
+        "authMethod",
+        "modelAddress",
+        "skillSha256"
+      ]
+    },
+    "auth.required": {
+      "required": [
+        "action",
+        "providerId",
+        "reason"
+      ],
+      "optional": [
+        "methodId"
+      ]
+    },
+    "build.completed": {
+      "required": [
+        "buildId",
+        "exitCode",
+        "status"
+      ],
+      "optional": [
+        "evidenceId",
+        "sourceSha256"
+      ]
+    },
+    "build.output": {
+      "required": [
+        "buildId",
+        "stream",
+        "text"
+      ],
+      "optional": []
+    },
+    "build.started": {
+      "required": [
+        "buildId",
+        "scriptId"
+      ],
+      "optional": []
+    },
+    "game.started": {
+      "required": [
+        "gameHandle",
+        "state"
+      ],
+      "optional": []
+    },
+    "game.stopped": {
+      "required": [
+        "gameHandle",
+        "state"
+      ],
+      "optional": [
+        "code"
+      ]
+    },
+    "model.changed": {
+      "required": [
+        "modelAddress",
+        "revision",
+        "scope"
+      ],
+      "optional": [
+        "authMethod"
+      ]
+    },
+    "permission.required": {
+      "required": [
+        "expiresAt",
+        "grantId",
+        "localApproval",
+        "purpose"
+      ],
+      "optional": []
+    },
+    "preview.started": {
+      "required": [
+        "previewHandle",
+        "version"
+      ],
+      "optional": []
+    },
+    "preview.updated": {
+      "required": [
+        "previewHandle",
+        "version"
+      ],
+      "optional": []
+    },
+    "provider.changed": {
+      "required": [
+        "providerId",
+        "revision",
+        "scope"
+      ],
+      "optional": [
+        "authMethod",
+        "modelAddress"
+      ]
+    },
+    "session.closed": {
+      "required": [
+        "projectHandle",
+        "state"
+      ],
+      "optional": []
+    },
+    "session.created": {
+      "required": [
+        "projectHandle",
+        "state"
+      ],
+      "optional": []
+    },
+    "tool.completed": {
+      "required": [
+        "callId",
+        "capability"
+      ],
+      "optional": [
+        "afterSha256",
+        "beforeSha256",
+        "code",
+        "path",
+        "status"
+      ]
+    },
+    "tool.failed": {
+      "required": [
+        "callId",
+        "capability"
+      ],
+      "optional": [
+        "afterSha256",
+        "beforeSha256",
+        "code",
+        "path",
+        "status"
+      ]
+    },
+    "tool.requested": {
+      "required": [
+        "callId",
+        "capability"
+      ],
+      "optional": [
+        "afterSha256",
+        "beforeSha256",
+        "code",
+        "path",
+        "status"
+      ]
+    },
+    "tool.started": {
+      "required": [
+        "callId",
+        "capability"
+      ],
+      "optional": [
+        "afterSha256",
+        "beforeSha256",
+        "code",
+        "path",
+        "status"
+      ]
+    }
+  },
+  "publicKeys": [
+    "accepted",
+    "action",
+    "active",
+    "activeModel",
+    "activeProvider",
+    "address",
+    "agentVersion",
+    "auth",
+    "authMethods",
+    "authenticated",
+    "available",
+    "builtin",
+    "bytes",
+    "cached",
+    "cancelled",
+    "capabilities",
+    "classification",
+    "cliVersion",
+    "closed",
+    "code",
+    "complete",
+    "content",
+    "contentId",
+    "contextWindow",
+    "count",
+    "createdAt",
+    "custom",
+    "data",
+    "defaultModel",
+    "defaultProvider",
+    "digests",
+    "displayName",
+    "enabled",
+    "encoding",
+    "entry",
+    "evidenceIds",
+    "exitCode",
+    "expectedSha256",
+    "experimental",
+    "id",
+    "inputTokens",
+    "length",
+    "line",
+    "local",
+    "matches",
+    "maxOutputTokens",
+    "method",
+    "mimeType",
+    "minimumSequence",
+    "mode",
+    "model",
+    "modelAddress",
+    "modelCalls",
+    "modelDiscovery",
+    "modelId",
+    "models",
+    "name",
+    "native",
+    "official",
+    "offset",
+    "operation",
+    "outputTokens",
+    "package",
+    "path",
+    "previewHandle",
+    "product",
+    "projectHandle",
+    "projects",
+    "promptCaching",
+    "protocolVersion",
+    "provider",
+    "providerId",
+    "providers",
+    "published",
+    "reason",
+    "reasoning",
+    "remaining",
+    "requestId",
+    "result",
+    "revision",
+    "runId",
+    "scriptId",
+    "sequence",
+    "sessionId",
+    "sessions",
+    "sha256",
+    "signals",
+    "skills",
+    "source",
+    "sourceSha256",
+    "stageInference",
+    "stale",
+    "state",
+    "status",
+    "streaming",
+    "studioVersion",
+    "text",
+    "tools",
+    "totalTokens",
+    "type",
+    "unofficial",
+    "updatedAt",
+    "usage",
+    "verified",
+    "version",
+    "vision"
+  ],
+  "secretKeyPattern": "^(?:__proto__|prototype|constructor|apiKey|api_key|access_token|refresh_token|id_token|authorization|cookie|credentials|environment|env|shell|argv|executable)$",
+  "secretTextPattern": "\\b(?:sk-(?:proj-)?[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,}|zuku_o[adr]_[A-Za-z0-9_-]{30,}|eyJ[A-Za-z0-9_-]{8,}\\.eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}|Bearer\\s+[A-Za-z0-9._~-]{16,})|-----BEGIN [A-Z ]*PRIVATE KEY-----",
+  "credentialAssignmentPattern": "(?:\\b(?:access|refresh|id)_token|authorization|api[_-]?key)\\s*[:=]\\s*[^\\s,;]{8,}",
+  "localPathPattern": "(?:[A-Za-z]:[\\\\/]|\\/(?:home|root|Users|etc|var|tmp|srv|opt)\\/)[^\\s\"'<>]+"
+}

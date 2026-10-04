@@ -1,0 +1,6 @@
+native/**/build/
+native/**/bin/
+native/**/obj/
+*.log
+.env*
+.codex/

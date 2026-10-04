@@ -9,7 +9,7 @@ import { AGE_RATINGS, DESCRIPTION_MAX, GAME_ID_PATTERN, GENRE_PATTERN, TAGS_MAX,
 import { projectPackager } from '../lib/upload-project.mjs';
 import { UploadError, asUploadError } from '../lib/upload-errors.mjs';
 import { inspectPackage, validTitle, LIMITS } from '../lib/upload-package.mjs';
-import { uploadClient, multipartFraming, MAX_MULTIPART_BYTES, CONTENT_ID } from '../lib/upload-client.mjs';
+import { uploadClient, multipartFraming, MAX_MULTIPART_BYTES, CONTENT_ID, validateIdempotencyKey } from '../lib/upload-client.mjs';
 import { prepareReceiptDir, buildReceipt, writeReceipt, DEFAULT_RECEIPT_DIR, safeDraftStatus } from '../lib/upload-receipt.mjs';
 
 /*
@@ -48,10 +48,11 @@ export function parseUploadArgs(args) {
 }
 
 /** Build the exact JUMP draft body. Status is always draft; thread publishing is always false. */
-export function buildDraftBody(meta, pkg, upload) {
+export function buildDraftBody(meta, pkg, upload, thumbnailUrl = '') {
+  if (thumbnailUrl !== '' && (typeof thumbnailUrl !== 'string' || !/^\/uploads\/[0-9]{4}-[0-9]{2}\/[A-Za-z0-9_-]{1,128}\.png$/.test(thumbnailUrl))) throw new UploadError('UPLOAD_METADATA_INVALID', { stage: 'metadata', reason: 'thumbnail' });
   return {
     category: 'jump', type: 'game', title: meta.title, description: meta.description, tags: meta.tags, age_rating: meta.ageRating,
-    thumbnail_url: '', media_url: upload.url, publish_to_thread: false,
+    thumbnail_url: thumbnailUrl, media_url: upload.url, publish_to_thread: false,
     jump: {
       game_id: meta.gameId, game_type: 'html5', genre: meta.genre, distribution_mode: 'online',
       platform: meta.platform, mobile_optimized: { certified: false, level: null },
@@ -142,6 +143,7 @@ export function verifyUpload(result, pkg, apiOrigin) {
 export async function runUpload(args, context = {}) {
   const { signal, credentials = readAccessToken, clientFactory = uploadClient, baseUrl = DEFAULT_BASE_URL, core = projectPackager, validator, cwd = process.cwd(), onProgress, now = () => new Date() } = context;
   const options = parseUploadArgs(args);
+  const idempotencyKey = validateIdempotencyKey(context.idempotencyKey);
   const cancelled = () => { if (signal?.aborted) throw new UploadError('COMMAND_CANCELLED'); };
   cancelled();
   // 1. Local input only: no credentials or network until the package and metadata are valid.
@@ -163,14 +165,16 @@ export async function runUpload(args, context = {}) {
   cancelled();
   const pkg = await inspectPackage(bytes, { validator });
   const meta = resolveMetadata(options, pkg, projectMeta);
+  // Validate an internally verified screenshot URL before credentials or mutations.
+  buildDraftBody(meta, pkg, { url: '' }, context.thumbnailUrl ?? '');
   pkg.version = meta.version;
   if (multipartFraming(bytes.length, { filename: pkg.filename, mediaType: pkg.mediaType }).contentLength > MAX_MULTIPART_BYTES) throw new UploadError('UPLOAD_INPUT_TOO_LARGE');
   const receiptDir = await prepareReceiptDir(options.receiptDir ?? DEFAULT_RECEIPT_DIR, { cwd });
   cancelled();
   // 2. User Bearer credential is read only now, after all local checks passed.
-  const token = await credentials();
+  const token = await credentials({ signal });
   if (!token) throw new UploadError('UNAUTHORIZED');
-  const client = await clientFactory(baseUrl, { accessToken: token, signal, onProgress });
+  const client = await clientFactory(baseUrl, { accessToken: token, signal, onProgress, idempotencyKey });
   const apiOrigin = baseUrl;
   const save = async (state, extra) => {
     const receipt = buildReceipt({ state, apiOrigin, pkg, cliVersion, now: now(), ...extra });
@@ -203,7 +207,7 @@ export async function runUpload(args, context = {}) {
   // 4. POST /contents exactly once with a draft-only JUMP body.
   if (signal?.aborted) throw await failWithReceipt(new UploadError('COMMAND_CANCELLED', { stage: 'draft' }), 'draft_not_attempted', { upload });
   let created;
-  try { created = await client.createDraft(buildDraftBody(meta, pkg, upload)); }
+  try { created = await client.createDraft(buildDraftBody(meta, pkg, upload, context.thumbnailUrl ?? '')); }
   catch (error) {
     throw await failWithReceipt(error, error?.ambiguous ? 'draft_outcome_unknown' : 'draft_rejected', { upload, stage: 'draft' });
   }

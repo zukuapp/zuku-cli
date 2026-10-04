@@ -1,6 +1,6 @@
 # 명령 참조
 
-명령 이름은 `zukujs`입니다(`@zukujs/cli` 0.2.0). 모든 명령에 `--json`을 붙이면 `zuku-command/1` 봉투로 출력합니다.
+`zuku`와 `zukujs`는 같은 명령입니다(`@zukujs/cli` 소스 버전 0.3.0). 기존 명령에 `--json`을 붙이면 `zuku-command/1` 봉투로 출력합니다. 에이전트·제공자·Studio 명령과 현재 호환 경계는 [통합 CLI](unified-cli.md)에 있습니다.
 
 ## 명령 요약
 
@@ -97,3 +97,15 @@ zukujs status [--check-api]
 | 130 | 사용자 취소(`COMMAND_CANCELLED`, Ctrl+C) |
 
 서버 오류는 HTTP 상태와 검증된 API 오류 코드(예: `UNAUTHORIZED`, `INVALID_PACKAGE`, `PAYLOAD_TOO_LARGE`, `VALIDATION_ERROR`)로 보고하며, 원격 응답 전문이나 헤더를 출력하지 않습니다.
+
+## 웹 프레임워크 명령
+
+이름 변경된 프레임워크 패키지 `zukujs`가 프로젝트에 설치되어 있으면 `dev`, `build`, `start`, `info`, `analyze`, `typegen`, `telemetry`, `upgrade`와 프레임워크의 나머지 등록 명령을 해당 패키지의 실행 파일로 전달합니다. 프레임워크는 [별도 저장소](https://github.com/zukuapp/zukujs)의 소스 설치 절차를 따르며 CLI가 자동으로 설치하지 않습니다.
+
+```sh
+zukujs dev --help
+zukujs build --webpack
+zukujs start
+```
+
+네이티브 인수·출력·종료 상태를 그대로 전달하므로, 이 명령의 `--json` 지원은 프레임워크 명령 자체의 규칙을 따릅니다. 게임 명령의 JSON 봉투를 적용하지 않습니다. 프레임워크가 없으면 `FRAMEWORK_UNAVAILABLE`로 실패합니다. 프로젝트 디렉터리에서 프레임워크를 먼저 찾고 CLI 설치 위치에서도 찾으며, 같은 CLI로 돌아오는 실행 파일이나 패키지 밖으로 나가는 경로는 거부합니다.

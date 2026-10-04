@@ -1,0 +1,177 @@
+name: Studio platform
+
+# Native ZUKU Studio shells: real compile, native protocol/stdio self-tests, shared
+# alias/Core checks and an unsigned, SHA-pinned platform asset kept as a CI artifact.
+# No release, publication, distribution signing, deployment, network OAuth or repository secrets.
+# The macOS build applies only its source-defined ad-hoc development signature.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - studio/**
+      - lib/agent-protocol/**
+      - lib/agent-core/**
+      - lib/browser-adapter/**
+      - lib/studio-*.mjs
+      - lib/accounts/windows-protected-store.mjs
+      - index.mjs
+      - package.json
+      - package-lock.json
+      - scripts/platform-build/**
+      - tests/windows-protected-store.test.mjs
+      - .github/workflows/studio-platform.yml
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: studio-platform-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ZUKU_MANAGED_NODE: 22.22.3
+
+jobs:
+  native:
+    name: ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x64
+            runner: ubuntu-24.04
+            arch: x64
+          - platform: linux-arm64
+            runner: ubuntu-24.04-arm
+            arch: arm64
+          - platform: darwin-x64
+            runner: macos-15-intel
+            arch: x64
+          - platform: darwin-arm64
+            runner: macos-15
+            arch: arm64
+          - platform: win-x64
+            runner: windows-2025
+            arch: x64
+          - platform: win-arm64
+            runner: windows-11-arm
+            arch: arm64
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # Shared payload hashes must match the LF bytes of the single npm package on every OS.
+      - name: Keep repository line endings byte-exact
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.ZUKU_MANAGED_NODE }}
+          architecture: ${{ matrix.arch }}
+
+      - name: Require the exact installer-managed Node release and native architecture
+        run: node --input-type=module -e "import {platformDescriptor,assertNativeHost} from './scripts/platform-build/matrix.mjs';assertNativeHost(platformDescriptor(process.argv[1]));if(process.version!=='v'+process.env.ZUKU_MANAGED_NODE)process.exit(1);console.log(JSON.stringify({platform:process.argv[1],node:process.version,arch:process.arch,native:true}))" "${{ matrix.platform }}"
+
+      - name: Install locked dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund --update-notifier=false
+
+      - name: Platform build helper tests (synthetic fixtures)
+        run: node --test scripts/platform-build/tests/platform-build.test.mjs
+
+      - name: Shared aliases, protocol and Core integration
+        run: node --test "tests/unified-aliases.test.mjs" "tests/agent-protocol-schema.test.mjs" "tests/agent-core-*.test.mjs" "tests/browser-adapter-*.test.mjs" "tests/studio-*.test.mjs"
+
+      - name: Windows shell source and manifest boundaries
+        if: runner.os == 'Windows'
+        run: node --test studio/native/windows/tests/windows-shell.test.mjs
+
+      - name: macOS shell source and JavaScript codec boundaries
+        if: runner.os == 'macOS'
+        run: |
+          node studio/native/macos/tests/static-check.mjs
+          node studio/native/macos/tests/codec-check.mjs
+
+      - name: Actual Windows DPAPI and account ACL checks (must run, not skip)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $output = node --test --test-reporter=tap tests/windows-protected-store.test.mjs
+          $status = $LASTEXITCODE
+          $output | Out-Host
+          if ($status -ne 0) { throw 'Windows protected-store tests failed.' }
+          $ran = $output | Select-String -Pattern '^ok \d+ - Windows DPAPI round-trip'
+          if (-not $ran -or $ran.Line -match '# SKIP') { throw 'The DPAPI round-trip test did not actually run.' }
+          # Only the non-Windows fallback test may skip here; every Windows test must execute.
+          $skipped = $output | Select-String -Pattern '# SKIP' | Where-Object { $_.Line -notmatch ' - Windows protected store fails safely on unsupported platforms' }
+          if ($skipped) { $skipped | Out-Host; throw 'A Windows protected-store test was skipped instead of run.' }
+
+      - name: Linux GTK/WebKit build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev xvfb
+
+      - name: .NET SDK for the Windows shell
+        if: runner.os == 'Windows'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Show the structured build plan
+        run: node scripts/platform-build/cli.mjs plan --platform ${{ matrix.platform }}
+
+      - name: Compile the native shell from source
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            xvfb-run -a node scripts/platform-build/cli.mjs build --platform ${{ matrix.platform }}
+          else
+            node scripts/platform-build/cli.mjs build --platform ${{ matrix.platform }}
+          fi
+
+      - name: Native protocol and stdio fixture self-tests
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then
+            xvfb-run -a node scripts/platform-build/cli.mjs self-test --platform ${{ matrix.platform }}
+          else
+            node scripts/platform-build/cli.mjs self-test --platform ${{ matrix.platform }}
+          fi
+
+      - name: Package the SHA-pinned platform asset (unsigned, not released)
+        run: node scripts/platform-build/cli.mjs package --platform ${{ matrix.platform }} --out "$RUNNER_TEMP/studio-asset" --require-clean
+
+      - name: Verify the asset against its record and this checkout's shared payload
+        run: node scripts/platform-build/cli.mjs verify --out "$RUNNER_TEMP/studio-asset" --cli-root "$GITHUB_WORKSPACE"
+
+      # The installed product is the packed npm payload, not the checkout: it must carry the
+      # host, renderer, bridge and schema byte-for-byte as the native asset expects.
+      - name: Verify the asset against the actual packed npm payload
+        run: |
+          mkdir -p "$RUNNER_TEMP/pack"
+          npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP/pack"
+          cd "$RUNNER_TEMP/pack"
+          tar -xzf zukujs-cli-*.tgz
+          cd "$GITHUB_WORKSPACE"
+          node scripts/platform-build/cli.mjs verify --out "$RUNNER_TEMP/studio-asset" --cli-root "$RUNNER_TEMP/pack/package"
+
+      - name: Re-package and require an identical archive hash
+        run: |
+          node scripts/platform-build/cli.mjs package --platform ${{ matrix.platform }} --out "$RUNNER_TEMP/studio-asset-again" --require-clean
+          node -e "const f=require('node:fs'),p=require('node:path');const h=d=>{const n=f.readdirSync(d).find(x=>x.endsWith('.asset.json'));return JSON.parse(f.readFileSync(p.join(d,n),'utf8')).sha256};if(h(process.argv[1])!==h(process.argv[2]))process.exit(1)" "$RUNNER_TEMP/studio-asset" "$RUNNER_TEMP/studio-asset-again"
+
+      - name: Keep the unsigned asset for owner review
+        uses: actions/upload-artifact@v4
+        with:
+          name: zuku-studio-native-${{ matrix.platform }}-unsigned
+          path: ${{ runner.temp }}/studio-asset/
+          if-no-files-found: error
+          retention-days: 7

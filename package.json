@@ -1,9 +1,10 @@
 {
   "name": "@zukujs/cli",
-  "version": "0.2.0",
-  "description": "ZukuJS project CLI for HTML5 creation, validation, packaging and draft uploads",
+  "version": "0.3.0",
+  "description": "Local ZukuJS game-development agent with mandatory skills, OAuth accounts and one-shot publishing",
   "type": "module",
   "bin": {
+    "zuku": "./index.mjs",
     "zukujs": "./index.mjs"
   },
   "files": [
@@ -11,7 +12,10 @@
     "commands/",
     "lib/",
     "docs/",
-    "scripts/check-syntax.mjs"
+    "scripts/check-syntax.mjs",
+    "skills/",
+    "studio/",
+    "scripts/platform-build/"
   ],
   "scripts": {
     "test": "node --test",
@@ -19,7 +23,12 @@
     "smoke": "node index.mjs --help"
   },
   "dependencies": {
-    "fflate": "0.8.3"
+    "@aws-sdk/client-bedrock": "3.1146.0",
+    "@aws-sdk/client-bedrock-runtime": "3.1146.0",
+    "fflate": "0.8.3",
+    "google-auth-library": "11.1.0",
+    "jose": "6.2.12",
+    "playwright-core": "1.63.0"
   },
   "keywords": [
     "zukujs",
@@ -31,5 +40,21 @@
   "license": "SOL",
   "engines": {
     "node": ">=22.0.0"
-  }
+  },
+  "bundledDependencies": [
+    "fflate",
+    "jose",
+    "playwright-core",
+    "@aws-sdk/client-bedrock",
+    "@aws-sdk/client-bedrock-runtime",
+    "google-auth-library"
+  ],
+  "bundleDependencies": [
+    "fflate",
+    "jose",
+    "playwright-core",
+    "@aws-sdk/client-bedrock",
+    "@aws-sdk/client-bedrock-runtime",
+    "google-auth-library"
+  ]
 }

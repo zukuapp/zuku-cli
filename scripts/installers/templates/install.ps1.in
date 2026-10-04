@@ -1,0 +1,228 @@
+[CmdletBinding()]
+param(
+    [string]$Prefix = '',
+    [switch]$NoNode,
+    [switch]$DryRun,
+    [switch]$Help
+)
+
+# Generated only from a complete verified zukujs-installer/1 contract.
+function Invoke-ZukuJSUserInstall {
+    param([string]$UserPrefix, [bool]$RequireNode, [bool]$PlanOnly, [bool]$ShowHelp)
+    Set-StrictMode -Version Latest
+    $ErrorActionPreference = 'Stop'
+    $contract = @@CONTRACT_JSON_PS@@ | ConvertFrom-Json
+    $studioProperty = $contract.PSObject.Properties['studio']
+    $hasStudio = $null -ne $studioProperty
+    if ($ShowHelp) {
+        Write-Host 'ZukuJS user installer: -Prefix ABSOLUTE_PATH, -NoNode, -DryRun, -Help'
+        Write-Host 'Equivalent commands: zuku and zukujs, sharing one CLI, configuration and accounts.'
+        Write-Host 'Default: LocalAppData\ZukuJS. Add its bin directory to your user PATH.'
+        Write-Host 'Uses Node.js 22+ and npm, or installs the pinned official runtime locally.'
+        Write-Host 'Full Studio uses one pinned managed runtime for CLI, shared Core and native shell.'
+        return
+    }
+    if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { throw 'Use the Bash installer on Linux or macOS.' }
+    if ([string]::IsNullOrWhiteSpace($UserPrefix)) {
+        $local = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
+        if ([string]::IsNullOrWhiteSpace($local)) { throw 'A user LocalAppData directory is required.' }
+        $UserPrefix = Join-Path $local 'ZukuJS'
+    }
+    if (-not [IO.Path]::IsPathRooted($UserPrefix) -or $UserPrefix -match '[\r\n]') { throw '-Prefix must be an absolute local directory without line breaks.' }
+    if ($UserPrefix.StartsWith('\\')) { throw 'Choose a local user directory instead of a network path.' }
+    $UserPrefix = [IO.Path]::GetFullPath($UserPrefix).TrimEnd('\')
+    if ($UserPrefix -eq [IO.Path]::GetPathRoot($UserPrefix).TrimEnd('\')) { throw 'The installation prefix cannot be a drive root.' }
+    $bin = Join-Path $UserPrefix 'bin'
+    $aliases = @('zuku', 'zukujs')
+    $launchers = @{zuku=(Join-Path $bin 'zuku.cmd'); zukujs=(Join-Path $bin 'zukujs.cmd')}
+    $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    function Assert-ZukuDirectory([string]$Path) {
+        $cursor = $Path
+        while (-not [string]::IsNullOrEmpty($cursor)) {
+            if (Test-Path -LiteralPath $cursor) {
+                $item = Get-Item -LiteralPath $cursor -Force
+                if (-not $item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Installation directories must be regular directories without junctions or links.' }
+            }
+            $parent = [IO.Path]::GetDirectoryName($cursor)
+            if ($parent -eq $cursor) { break }
+            $cursor = $parent
+        }
+        if (Test-Path -LiteralPath $Path) {
+            $owner = (Get-Acl -LiteralPath $Path).GetOwner([Security.Principal.SecurityIdentifier]).Value
+            if ($owner -ne $sid) { throw 'Choose a directory owned by your user.' }
+        }
+    }
+    function Assert-ZukuLauncher([string]$LauncherPath) {
+        if (Test-Path -LiteralPath $LauncherPath) {
+            $item = Get-Item -LiteralPath $LauncherPath -Force
+            if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'The existing launcher cannot be replaced.' }
+            $head = [IO.File]::ReadAllLines($LauncherPath)
+            if ($head.Length -lt 3 -or $head[0] -ne '@echo off' -or $head[1] -ne 'rem ZukuJS user installer launcher' -or $head[2] -ne ('rem prefix: ' + $UserPrefix.Replace('%', '%%'))) { throw 'An existing zuku or zukujs command belongs to another installation; choose another -Prefix.' }
+        }
+    }
+    function Invoke-ZukuNode([string]$Executable, [string[]]$NodeArguments) {
+        $oldOptions = $env:NODE_OPTIONS
+        try {
+            $env:NODE_OPTIONS = $null
+            & $Executable @NodeArguments
+            if ($LASTEXITCODE -ne 0) { throw 'A Node.js installation check failed.' }
+        } finally { $env:NODE_OPTIONS = $oldOptions }
+    }
+    Assert-ZukuDirectory $UserPrefix
+    Assert-ZukuDirectory $bin
+    Assert-ZukuDirectory (Join-Path $UserPrefix 'releases')
+    foreach ($alias in $aliases) { Assert-ZukuLauncher $launchers[$alias] }
+    $nodePath = ''
+    $npmJs = ''
+    $current = Get-Command node.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -ne $current) {
+        try {
+            if ((Invoke-ZukuNode $current.Source @('-p', 'Number(process.versions.node.split(".")[0]) >= 22')) -eq 'true') {
+                $nodePath = $current.Source
+                $candidate = Join-Path ([IO.Path]::GetDirectoryName($nodePath)) 'node_modules\npm\bin\npm-cli.js'
+                if (Test-Path -LiteralPath $candidate -PathType Leaf) { $npmJs = $candidate }
+            }
+        } catch { $nodePath = ''; $npmJs = '' }
+    }
+    $useRuntime = [string]::IsNullOrEmpty($nodePath) -or [string]::IsNullOrEmpty($npmJs)
+    $platform = 'win-x64'
+    try { $arch = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() }
+    catch { $arch = $env:PROCESSOR_ARCHITECTURE; if ($env:PROCESSOR_ARCHITEW6432) { $arch = $env:PROCESSOR_ARCHITEW6432 } }
+    if ($arch -match '^arm64$') { $platform = 'win-arm64' }
+    elseif ($arch -notmatch '^(x64|amd64)$') { throw 'The Windows installer supports x64 and arm64.' }
+    $nodeArtifact = $contract.node.artifacts.PSObject.Properties[$platform]
+    if ($hasStudio) {
+        if ($null -eq $studioProperty.Value.assets.PSObject.Properties[$platform]) { throw 'No verified native Studio release asset is available for this platform.' }
+        if ($RequireNode) { throw 'Full Studio requires its pinned managed Node runtime; -NoNode is for CLI-only releases.' }
+        $useRuntime = $true
+    }
+    if ($useRuntime -and $RequireNode) { throw 'Install Node.js 22+ with npm and run the installer again without Administrator permissions.' }
+    if ($useRuntime -and $null -eq $nodeArtifact) { throw 'No verified Node.js runtime is available for this platform.' }
+    Write-Host ('ZukuJS ' + $contract.cli.version + ' -> ' + $UserPrefix)
+    if ($useRuntime) { Write-Host ('Node.js ' + $contract.node.version + ' will be installed for your user.') }
+    if ($PlanOnly) { foreach ($alias in $aliases) { Write-Host ('Launcher: ' + $launchers[$alias]) }; return }
+
+    $work = ''
+    $lockStream = $null
+    $releaseChanged = $false
+    $launcherChanged = @{zuku=$false; zukujs=$false}
+    $success = $false
+    $prefixCreated = $false
+    $binCreated = $false
+    $oldTls = [Net.ServicePointManager]::SecurityProtocol
+    $release = Join-Path $UserPrefix ('releases\cli-' + $contract.cli.version + '-' + $contract.cli.sha256.Substring(0, 12))
+    $lockPath = Join-Path $UserPrefix '.install-lock'
+    function Get-ZukuDownload([string]$Url, [string]$Output, [string]$Expected) {
+        Invoke-WebRequest -Uri $Url -OutFile $Output -UseBasicParsing -MaximumRedirection 0 -TimeoutSec 600
+        $actual = (Get-FileHash -LiteralPath $Output -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($actual -ne $Expected) { throw 'Download checksum mismatch. The existing installation was preserved.' }
+    }
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        if (-not (Test-Path -LiteralPath $UserPrefix)) { [IO.Directory]::CreateDirectory($UserPrefix) | Out-Null; $prefixCreated = $true }
+        Assert-ZukuDirectory $UserPrefix
+        try { $lockStream = [IO.File]::Open($lockPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None) }
+        catch { throw 'Another installation is active. Retry after it finishes.' }
+        $work = Join-Path $UserPrefix ('.install-' + [Guid]::NewGuid().ToString('N'))
+        $newRelease = Join-Path $work 'release-new'
+        [IO.Directory]::CreateDirectory($newRelease) | Out-Null
+        $contractFile = Join-Path $work 'contract.json'
+        [IO.File]::WriteAllText($contractFile, ($contract | ConvertTo-Json -Depth 20 -Compress), [Text.UTF8Encoding]::new($false))
+        $nativeHelper = Join-Path $work 'native-helper.mjs'
+        [IO.File]::WriteAllBytes($nativeHelper, [Convert]::FromBase64String(@@NATIVE_HELPER_PS@@))
+        $cliArchive = Join-Path $work 'cli.tgz'
+        Write-Host 'Downloading the verified CLI package...'
+        Get-ZukuDownload $contract.cli.url $cliArchive $contract.cli.sha256
+        if ($useRuntime) {
+            $nodeArchive = Join-Path $work 'node.zip'
+            Get-ZukuDownload $nodeArtifact.Value.url $nodeArchive $nodeArtifact.Value.sha256
+            $extracted = Join-Path $work 'node-extracted'
+            Expand-Archive -LiteralPath $nodeArchive -DestinationPath $extracted
+            $folder = Join-Path $extracted ('node-v' + $contract.node.version + '-' + $platform)
+            Move-Item -LiteralPath $folder -Destination (Join-Path $newRelease 'runtime')
+            $nodePath = Join-Path $newRelease 'runtime\node.exe'
+            $npmJs = Join-Path $newRelease 'runtime\node_modules\npm\bin\npm-cli.js'
+            if ((Invoke-ZukuNode $nodePath @('--version')) -ne ('v' + $contract.node.version)) { throw 'The verified Node.js runtime could not start on this system.' }
+        }
+        $npmPrefix = Join-Path $newRelease 'npm'
+        $userConfig = Join-Path $work 'user-npmrc'
+        $globalConfig = Join-Path $work 'global-npmrc'
+        [IO.File]::WriteAllText($userConfig, '')
+        [IO.File]::WriteAllText($globalConfig, '')
+        Write-Host 'Installing into the user directory...'
+        Invoke-ZukuNode $nodePath @($npmJs, 'install', '--offline', '--ignore-scripts', '--no-audit', '--no-fund', '--update-notifier=false', '--global', '--prefix', $npmPrefix, '--cache', (Join-Path $work 'npm-cache'), '--userconfig', $userConfig, '--globalconfig', $globalConfig, $cliArchive) | Out-Host
+        $packageRoot = Join-Path $npmPrefix 'node_modules\@zukujs\cli'
+        $package = Get-Content -LiteralPath (Join-Path $packageRoot 'package.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($package.name -ne '@zukujs/cli' -or $package.version -ne $contract.cli.version -or $package.bin.zuku -ne './index.mjs' -or $package.bin.zukujs -ne './index.mjs') { throw 'Installed CLI identity did not match the verified release.' }
+        Invoke-ZukuNode $nodePath @((Join-Path $packageRoot 'index.mjs'), '--help') | Out-Null
+        if ($useRuntime) { $finalNode = Join-Path $release 'runtime\node.exe' } else { $finalNode = $nodePath }
+        $marker = @{schema='zukujs-user-install/1'; version=$contract.cli.version; sha256=$contract.cli.sha256; node=$finalNode} | ConvertTo-Json -Compress
+        [IO.File]::WriteAllText((Join-Path $newRelease 'install.json'), $marker + [Environment]::NewLine)
+        if ($hasStudio) {
+            Write-Host 'Downloading and verifying the fixed native Studio asset...'
+            $studioArchive = Join-Path $work 'studio.archive'
+            Invoke-ZukuNode $nodePath @($nativeHelper, 'download', $contractFile, $platform, $studioArchive)
+            Invoke-ZukuNode $nodePath @($nativeHelper, 'install', $contractFile, $platform, $studioArchive, $packageRoot, $newRelease, $newRelease)
+        }
+        if (Test-Path -LiteralPath $release) {
+            Assert-ZukuDirectory $release
+            $old = Get-Content -LiteralPath (Join-Path $release 'install.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($old.schema -ne 'zukujs-user-install/1' -or $old.version -ne $contract.cli.version -or $old.sha256 -ne $contract.cli.sha256) { throw 'The release directory belongs to another installation.' }
+        }
+        if (-not (Test-Path -LiteralPath $bin)) { [IO.Directory]::CreateDirectory($bin) | Out-Null; $binCreated = $true }
+        Assert-ZukuDirectory $bin
+        foreach ($alias in $aliases) { Assert-ZukuLauncher $launchers[$alias] }
+        $entry = Join-Path $release 'npm\node_modules\@zukujs\cli\index.mjs'
+        $tempLaunchers = @{}
+        foreach ($alias in $aliases) {
+            $launcher = $launchers[$alias]
+            if (Test-Path -LiteralPath $launcher) { [IO.File]::Copy($launcher, (Join-Path $work ('launcher-old-' + $alias)), $false) }
+            $cmdLines = @('@echo off', 'rem ZukuJS user installer launcher', ('rem prefix: ' + $UserPrefix.Replace('%','%%')), 'setlocal DisableDelayedExpansion', 'for /f "tokens=2 delims=:" %%A in (''chcp'') do set "_zuku_old_cp=%%A"', 'chcp 65001 >nul', ('"' + $finalNode.Replace('%','%%') + '" "' + $entry.Replace('%','%%') + '" %*'), 'set "_zuku_exit=%errorlevel%"', 'chcp %_zuku_old_cp% >nul', 'exit /b %_zuku_exit%')
+            $cmd = ($cmdLines -join "`r`n") + "`r`n"
+            $tempLaunchers[$alias] = Join-Path $work ('launcher-new-' + $alias + '.cmd')
+            [IO.File]::WriteAllText($tempLaunchers[$alias], $cmd, [Text.UTF8Encoding]::new($false))
+        }
+        if (Test-Path -LiteralPath $release) { Move-Item -LiteralPath $release -Destination (Join-Path $work 'release-old') }
+        $releaseChanged = $true
+        [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($release)) | Out-Null
+        Move-Item -LiteralPath $newRelease -Destination $release
+        foreach ($alias in $aliases) {
+            $launcher = $launchers[$alias]
+            $launcherChanged[$alias] = $true
+            if (Test-Path -LiteralPath $launcher) { [IO.File]::Delete($launcher) }
+            [IO.File]::Move($tempLaunchers[$alias], $launcher)
+        }
+        foreach ($alias in $aliases) { Invoke-ZukuNode $launchers[$alias] @('--help') | Out-Null }
+        $success = $true
+        $env:PATH = $bin + ';' + $env:PATH
+        Write-Host ('Installed ZukuJS ' + $contract.cli.version + '. Run: zuku --help (or zukujs --help)')
+        Write-Host ('For future terminals, add this directory to your user PATH: ' + $bin)
+    } finally {
+        [Net.ServicePointManager]::SecurityProtocol = $oldTls
+        if (-not $success -and -not [string]::IsNullOrEmpty($work)) {
+            foreach ($alias in $aliases) {
+                $launcher = $launchers[$alias]
+                if ($launcherChanged[$alias]) {
+                    if (Test-Path -LiteralPath $launcher) { [IO.File]::Delete($launcher) }
+                    $backup = Join-Path $work ('launcher-old-' + $alias)
+                    if (Test-Path -LiteralPath $backup) { [IO.File]::Move($backup, $launcher) }
+                }
+            }
+            if ($releaseChanged) {
+                if (Test-Path -LiteralPath $release) { Remove-Item -LiteralPath $release -Recurse -Force }
+                if (Test-Path -LiteralPath (Join-Path $work 'release-old')) { Move-Item -LiteralPath (Join-Path $work 'release-old') -Destination $release }
+            }
+        }
+        if (-not [string]::IsNullOrEmpty($work) -and (Test-Path -LiteralPath $work)) { Remove-Item -LiteralPath $work -Recurse -Force }
+        if ($null -ne $lockStream) { $lockStream.Dispose(); [IO.File]::Delete($lockPath) }
+        if (-not $success) {
+            if ($binCreated -and (Test-Path -LiteralPath $bin)) { [IO.Directory]::Delete($bin, $false) }
+            if ($prefixCreated -and (Test-Path -LiteralPath $UserPrefix)) {
+                $releases = Join-Path $UserPrefix 'releases'
+                if (Test-Path -LiteralPath $releases) { [IO.Directory]::Delete($releases, $false) }
+                [IO.Directory]::Delete($UserPrefix, $false)
+            }
+        }
+    }
+}
+Invoke-ZukuJSUserInstall -UserPrefix $Prefix -RequireNode $NoNode.IsPresent -PlanOnly $DryRun.IsPresent -ShowHelp $Help.IsPresent

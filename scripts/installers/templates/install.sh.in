@@ -1,0 +1,260 @@
+#!/usr/bin/env bash
+# Generated from a verified zukujs-installer/1 contract. Requires Bash 3.2+.
+set -Eeuo pipefail
+umask 077
+
+CLI_VERSION=@@CLI_VERSION_SH@@
+PACKAGE_URL=@@PACKAGE_URL_SH@@
+PACKAGE_SHA256=@@PACKAGE_SHA256_SH@@
+NODE_VERSION=@@NODE_VERSION_SH@@
+zuku_studio_enabled=@@STUDIO_ENABLED_SH@@
+zuku_contract_json=@@CONTRACT_JSON_SH@@
+
+zuku_log() { printf '%s\n' "$*" >&2; }
+zuku_fail() { zuku_log "ZukuJS installer: $*"; exit 1; }
+zuku_usage() {
+  cat <<'HELP'
+Install ZukuJS for your user with the equivalent zuku and zukujs commands.
+Usage: bash install.sh [--prefix ABSOLUTE_PATH] [--no-node] [--dry-run]
+  --prefix PATH  Install into PATH, with its launcher in PATH/bin.
+  --no-node      Require an existing Node.js 22+ and npm.
+  --dry-run      Show the installation plan without writing or downloading.
+  --help        Show this help.
+Without --prefix, use ~/.local/share/zukujs and ~/.local/bin/{zuku,zukujs}.
+Both commands use the same CLI, configuration and accounts. Shell profiles
+and existing independent system commands are preserved.
+When Node.js 22+ and npm are unavailable, install a pinned official runtime
+inside the user installation. Linux/macOS x64 and arm64 are supported.
+Full Studio releases install one pinned managed Node runtime for both CLI aliases,
+the shared agent host and the native shell. --no-node applies to CLI-only releases.
+HELP
+}
+
+zuku_custom_prefix=0
+zuku_no_node=0
+zuku_dry_run=0
+zuku_prefix=''
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --prefix)
+      [[ $# -ge 2 && -n "$2" ]] || zuku_fail '--prefix needs an absolute path.'
+      zuku_prefix=$2; zuku_custom_prefix=1; shift 2 ;;
+    --prefix=*) zuku_prefix=${1#*=}; zuku_custom_prefix=1; shift ;;
+    --no-node) zuku_no_node=1; shift ;;
+    --dry-run) zuku_dry_run=1; shift ;;
+    --help|-h) zuku_usage; exit 0 ;;
+    *) zuku_fail 'Unknown option. Use --help.' ;;
+  esac
+done
+[[ -n "${HOME:-}" && "$HOME" == /* ]] || zuku_fail 'HOME must be an absolute user directory.'
+if [[ $zuku_custom_prefix -eq 0 ]]; then zuku_prefix="$HOME/.local/share/zukujs"; fi
+[[ -n "$zuku_prefix" && "$zuku_prefix" == /* && "$zuku_prefix" != / ]] || zuku_fail '--prefix must be an absolute directory, not /.'
+[[ "$zuku_prefix" != *$'\n'* && "$zuku_prefix" != *$'\r'* ]] || zuku_fail 'Installation paths cannot contain line breaks.'
+[[ "$zuku_prefix" != *'\'* ]] || zuku_fail 'Use a directory without backslashes; Node.js ESM cannot load that Unix path.'
+while [[ "$zuku_prefix" == */ ]]; do zuku_prefix=${zuku_prefix%/}; done
+[[ "$zuku_prefix" != *'/../'* && "$zuku_prefix" != */.. && "$zuku_prefix" != *'/./'* && "$zuku_prefix" != */. ]] || zuku_fail 'Use a normalized absolute path.'
+if [[ $zuku_custom_prefix -eq 1 ]]; then zuku_bin="$zuku_prefix/bin"; else zuku_bin="$HOME/.local/bin"; fi
+
+zuku_check_path() {
+  local target=$1 cursor='' part
+  local -a pieces
+  IFS=/ read -r -a pieces <<< "$target"
+  for part in "${pieces[@]}"; do
+    [[ -n "$part" ]] || continue
+    cursor="$cursor/$part"
+    [[ ! -L "$cursor" ]] || zuku_fail 'Installation paths must not contain symbolic links.'
+    [[ ! -e "$cursor" || -d "$cursor" ]] || zuku_fail 'An installation directory is occupied by a file.'
+  done
+  if [[ -e "$target" ]]; then [[ -O "$target" && -w "$target" ]] || zuku_fail 'Choose a user-owned, writable installation directory.'; fi
+}
+zuku_check_path "$zuku_prefix"
+zuku_check_path "$zuku_bin"
+zuku_commands=(zuku zukujs)
+zuku_launchers=("$zuku_bin/zuku" "$zuku_bin/zukujs")
+zuku_check_launcher() {
+  local launcher first mark
+  for launcher in "${zuku_launchers[@]}"; do
+    if [[ -e "$launcher" || -L "$launcher" ]]; then
+      [[ -f "$launcher" && ! -L "$launcher" && -O "$launcher" ]] || zuku_fail 'An existing launcher cannot be replaced; choose another --prefix.'
+      IFS= read -r first < "$launcher"
+      mark=$(sed -n '2,3p' "$launcher")
+      [[ "$first" == '#!/usr/bin/env bash' && "$mark" == "# ZukuJS user installer launcher"$'\n'"# prefix: $zuku_prefix" ]] || zuku_fail 'An existing zuku or zukujs command belongs to another installation; choose another --prefix.'
+    fi
+  done
+}
+zuku_check_launcher
+
+zuku_os=$(uname -s)
+case "$zuku_os" in Linux) zuku_os=linux ;; Darwin) zuku_os=darwin ;; *) zuku_fail 'Use the PowerShell installer on Windows.' ;; esac
+zuku_arch=$(uname -m)
+case "$zuku_arch" in x86_64|amd64) zuku_arch=x64 ;; aarch64|arm64) zuku_arch=arm64 ;; *) zuku_fail 'This installer supports x64 and arm64.' ;; esac
+zuku_platform="$zuku_os-$zuku_arch"
+zuku_studio_available=0
+case "$zuku_platform" in
+@@STUDIO_CASES_SH@@
+esac
+if [[ $zuku_studio_enabled -eq 1 ]]; then
+  [[ $zuku_studio_available -eq 1 ]] || zuku_fail 'No verified native Studio release asset is available for this platform.'
+  [[ $zuku_no_node -eq 0 ]] || zuku_fail 'Full Studio requires its pinned managed Node runtime; --no-node is for CLI-only releases.'
+fi
+NODE_URL=''; NODE_SHA256=''
+case "$zuku_platform" in
+@@NODE_CASES_SH@@
+esac
+
+zuku_node=''; zuku_npm=''; zuku_runtime=0
+zuku_candidate=$(command -v node || true)
+if [[ -n "$zuku_candidate" && -f "$zuku_candidate" && -x "$zuku_candidate" ]]; then
+  if [[ $(NODE_OPTIONS='' "$zuku_candidate" -p 'Number(process.versions.node.split(".")[0]) >= 22' 2>/dev/null || true) == true ]]; then
+    zuku_node="$(cd -- "$(dirname -- "$zuku_candidate")" && pwd -P)/$(basename -- "$zuku_candidate")"
+    zuku_npm=$(command -v npm || true)
+    if [[ -n "$zuku_npm" && -f "$zuku_npm" && -x "$zuku_npm" ]]; then zuku_npm="$(cd -- "$(dirname -- "$zuku_npm")" && pwd -P)/$(basename -- "$zuku_npm")"; fi
+  fi
+fi
+if [[ $zuku_studio_enabled -eq 1 || -z "$zuku_node" || -z "$zuku_npm" || ! -f "$zuku_npm" || ! -x "$zuku_npm" ]]; then
+  [[ $zuku_no_node -eq 0 ]] || zuku_fail 'Install Node.js 22+ with npm, then run the installer again without elevated permissions.'
+  [[ -n "$NODE_URL" && -n "$NODE_SHA256" ]] || zuku_fail 'No verified Node.js runtime is available for this platform.'
+  zuku_runtime=1
+fi
+zuku_log "ZukuJS $CLI_VERSION -> $zuku_prefix"
+if [[ $zuku_runtime -eq 1 ]]; then zuku_log "Node.js $NODE_VERSION will be installed for your user."; fi
+if [[ $zuku_dry_run -eq 1 ]]; then printf 'Launcher: %s\n' "${zuku_launchers[@]}" >&2; exit 0; fi
+
+zuku_work=''; zuku_lock=0; zuku_release_changed=0; zuku_success=0
+zuku_temp_launchers=('' ''); zuku_launcher_changed=(0 0)
+zuku_prefix_created=0; zuku_bin_created=0
+zuku_release="$zuku_prefix/releases/cli-$CLI_VERSION-${PACKAGE_SHA256:0:12}"
+zuku_cleanup() {
+  local status=$? index launcher temporary
+  trap - EXIT INT TERM
+  set +e
+  if [[ $zuku_success -eq 0 && -n "$zuku_work" ]]; then
+    for index in 0 1; do
+      launcher=${zuku_launchers[$index]}
+      if [[ ${zuku_launcher_changed[$index]} -eq 1 ]]; then
+        if [[ -f "$zuku_work/launcher-old-${zuku_commands[$index]}" ]]; then mv -f -- "$zuku_work/launcher-old-${zuku_commands[$index]}" "$launcher"; else rm -f -- "$launcher"; fi
+      fi
+    done
+    if [[ $zuku_release_changed -eq 1 ]]; then
+      rm -rf -- "$zuku_release"
+      if [[ -d "$zuku_work/release-old" ]]; then mv -- "$zuku_work/release-old" "$zuku_release"; fi
+    fi
+  fi
+  if [[ -n "$zuku_work" && -d "$zuku_work" ]]; then rm -rf -- "$zuku_work"; fi
+  for temporary in "${zuku_temp_launchers[@]}"; do
+    if [[ -n "$temporary" && -f "$temporary" ]]; then rm -f -- "$temporary"; fi
+  done
+  if [[ $zuku_lock -eq 1 ]]; then rmdir -- "$zuku_prefix/.install-lock"; fi
+  if [[ $zuku_success -eq 0 ]]; then
+    if [[ $zuku_bin_created -eq 1 ]]; then rmdir -- "$zuku_bin" 2>/dev/null; fi
+    if [[ $zuku_prefix_created -eq 1 ]]; then rmdir -- "$zuku_prefix/releases" "$zuku_prefix" 2>/dev/null; fi
+  fi
+  exit "$status"
+}
+trap zuku_cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+if [[ ! -e "$zuku_prefix" ]]; then mkdir -p -- "$zuku_prefix"; zuku_prefix_created=1; fi
+zuku_check_path "$zuku_prefix"
+mkdir -- "$zuku_prefix/.install-lock" 2>/dev/null || zuku_fail 'Another installation is active. Retry after it finishes.'
+zuku_lock=1
+zuku_work=$(mktemp -d "$zuku_prefix/.install-XXXXXXXX")
+mkdir -- "$zuku_work/release-new"
+printf '%s\n' "$zuku_contract_json" > "$zuku_work/contract.json"
+cat > "$zuku_work/native-helper.mjs" <<'ZUKU_NATIVE_HELPER_EOF'
+@@NATIVE_HELPER_SH@@
+ZUKU_NATIVE_HELPER_EOF
+
+zuku_download() {
+  local url=$1 output=$2
+  if command -v curl >/dev/null 2>&1; then
+    curl --disable --fail --silent --show-error --proto '=https' --proto-redir '=https' --tlsv1.2 --location --max-redirs 0 --connect-timeout 30 --max-time 600 --output "$output" "$url"
+  elif command -v wget >/dev/null 2>&1; then
+    wget --no-config --quiet --https-only --max-redirect=0 --timeout=30 --tries=1 --output-document="$output" "$url"
+  else zuku_fail 'Install curl or wget, then run the installer again.'; fi
+}
+zuku_verify_sha() {
+  local file=$1 expected=$2 actual
+  if command -v sha256sum >/dev/null 2>&1; then actual=$(sha256sum < "$file"); actual=${actual%% *};
+  elif command -v shasum >/dev/null 2>&1; then actual=$(shasum -a 256 < "$file"); actual=${actual%% *};
+  elif command -v openssl >/dev/null 2>&1; then actual=$(openssl dgst -sha256 "$file"); actual=${actual##* };
+  else zuku_fail 'A SHA-256 tool is required: sha256sum, shasum or openssl.'; fi
+  [[ "$actual" == "$expected" ]] || zuku_fail 'Download checksum mismatch. The existing installation was preserved.'
+}
+zuku_log 'Downloading the verified CLI package...'
+zuku_download "$PACKAGE_URL" "$zuku_work/cli.tgz"
+zuku_verify_sha "$zuku_work/cli.tgz" "$PACKAGE_SHA256"
+zuku_new="$zuku_work/release-new"
+zuku_container="$zuku_new"
+zuku_final_dir="$zuku_release"
+if [[ $zuku_studio_enabled -eq 1 && "$zuku_os" == darwin ]]; then
+  zuku_new="$zuku_container/zuku-runtime"
+  zuku_final_dir="$zuku_release/zuku-runtime"
+  mkdir -- "$zuku_new"
+fi
+if [[ $zuku_runtime -eq 1 ]]; then
+  command -v tar >/dev/null 2>&1 || zuku_fail 'tar is required for the user Node.js runtime.'
+  zuku_download "$NODE_URL" "$zuku_work/node.tar.gz"
+  zuku_verify_sha "$zuku_work/node.tar.gz" "$NODE_SHA256"
+  mkdir -- "$zuku_new/runtime"
+  tar -xzf "$zuku_work/node.tar.gz" --strip-components=1 -C "$zuku_new/runtime"
+  zuku_node="$zuku_new/runtime/bin/node"
+  zuku_npm="$zuku_new/runtime/bin/npm"
+  [[ $(NODE_OPTIONS='' "$zuku_node" --version) == "v$NODE_VERSION" ]] || zuku_fail 'The verified Node.js runtime could not start on this system.'
+fi
+zuku_log 'Installing into the user directory...'
+: > "$zuku_work/user-npmrc"
+: > "$zuku_work/global-npmrc"
+NODE_OPTIONS='' PATH="$(dirname -- "$zuku_node"):$PATH" "$zuku_npm" install --offline --ignore-scripts --no-audit --no-fund --update-notifier=false --global --prefix "$zuku_new/npm" --cache "$zuku_work/npm-cache" --userconfig "$zuku_work/user-npmrc" --globalconfig "$zuku_work/global-npmrc" "$zuku_work/cli.tgz" >&2
+zuku_entry="$zuku_new/npm/lib/node_modules/@zukujs/cli/index.mjs"
+NODE_OPTIONS='' "$zuku_node" -e 'const f=require("node:fs");const p=JSON.parse(f.readFileSync(process.argv[1],"utf8"));if(p.name!=="@zukujs/cli"||p.version!==process.argv[2]||p.bin?.zuku!=="./index.mjs"||p.bin?.zukujs!=="./index.mjs")process.exit(1)' "$zuku_new/npm/lib/node_modules/@zukujs/cli/package.json" "$CLI_VERSION" || zuku_fail 'Installed CLI identity did not match the verified release.'
+NODE_OPTIONS='' "$zuku_node" "$zuku_entry" --help >/dev/null
+if [[ $zuku_runtime -eq 1 ]]; then zuku_final_node="$zuku_final_dir/runtime/bin/node"; else zuku_final_node=$zuku_node; fi
+NODE_OPTIONS='' "$zuku_node" -e 'const f=require("node:fs");f.writeFileSync(process.argv[1],JSON.stringify({schema:"zukujs-user-install/1",version:process.argv[2],sha256:process.argv[3],node:process.argv[4]})+"\n",{mode:0o600})' "$zuku_new/install.json" "$CLI_VERSION" "$PACKAGE_SHA256" "$zuku_final_node"
+if [[ $zuku_studio_enabled -eq 1 ]]; then
+  zuku_log 'Downloading and verifying the fixed native Studio asset...'
+  NODE_OPTIONS='' "$zuku_node" "$zuku_work/native-helper.mjs" download "$zuku_work/contract.json" "$zuku_platform" "$zuku_work/studio.archive"
+  NODE_OPTIONS='' "$zuku_node" "$zuku_work/native-helper.mjs" install "$zuku_work/contract.json" "$zuku_platform" "$zuku_work/studio.archive" "$zuku_new/npm/lib/node_modules/@zukujs/cli" "$zuku_container" "$zuku_new"
+fi
+if [[ -e "$zuku_release" || -L "$zuku_release" ]]; then
+  [[ -d "$zuku_release" && ! -L "$zuku_release" && -O "$zuku_release" ]] || zuku_fail 'The release directory belongs to another installation.'
+  zuku_old_dir=$zuku_final_dir
+  # A same-version macOS CLI-only release predates the adjacent app/runtime layout.
+  # Verify its existing marker before moving the whole release, keeping both layouts restorable.
+  if [[ "$zuku_os" == darwin && ! -e "$zuku_old_dir/install.json" && ! -L "$zuku_old_dir/install.json" ]]; then
+    if [[ "$zuku_old_dir" == "$zuku_release" ]]; then zuku_old_dir="$zuku_release/zuku-runtime"; else zuku_old_dir=$zuku_release; fi
+  fi
+  zuku_check_path "$zuku_old_dir"
+  [[ -f "$zuku_old_dir/install.json" && ! -L "$zuku_old_dir/install.json" ]] || zuku_fail 'The release directory belongs to another installation.'
+  NODE_OPTIONS='' "$zuku_node" -e 'const f=require("node:fs");const p=JSON.parse(f.readFileSync(process.argv[1],"utf8"));if(p.schema!=="zukujs-user-install/1"||p.version!==process.argv[2]||p.sha256!==process.argv[3])process.exit(1)' "$zuku_old_dir/install.json" "$CLI_VERSION" "$PACKAGE_SHA256" || zuku_fail 'The release directory belongs to another installation.'
+fi
+if [[ ! -e "$zuku_bin" ]]; then mkdir -p -- "$zuku_bin"; zuku_bin_created=1; fi
+zuku_check_path "$zuku_bin"
+mkdir -p -- "$zuku_prefix/releases"
+zuku_check_path "$zuku_prefix/releases"
+zuku_check_launcher
+for zuku_index in 0 1; do
+  zuku_launcher=${zuku_launchers[$zuku_index]}
+  if [[ -f "$zuku_launcher" ]]; then cp -p -- "$zuku_launcher" "$zuku_work/launcher-old-${zuku_commands[$zuku_index]}"; fi
+  zuku_temp_launchers[$zuku_index]=$(mktemp "$zuku_bin/.zukujs-XXXXXXXX")
+  {
+    printf '#!/usr/bin/env bash\n# ZukuJS user installer launcher\n# prefix: %s\n' "$zuku_prefix"
+    printf 'exec %q %q "$@"\n' "$zuku_final_node" "$zuku_final_dir/npm/lib/node_modules/@zukujs/cli/index.mjs"
+  } > "${zuku_temp_launchers[$zuku_index]}"
+  chmod 755 -- "${zuku_temp_launchers[$zuku_index]}"
+done
+if [[ -d "$zuku_release" ]]; then mv -- "$zuku_release" "$zuku_work/release-old"; fi
+zuku_release_changed=1
+mv -- "$zuku_container" "$zuku_release"
+for zuku_index in 0 1; do
+  zuku_launcher_changed[$zuku_index]=1
+  mv -f -- "${zuku_temp_launchers[$zuku_index]}" "${zuku_launchers[$zuku_index]}"
+done
+for zuku_launcher in "${zuku_launchers[@]}"; do NODE_OPTIONS='' "$zuku_launcher" --help >/dev/null; done
+zuku_success=1
+zuku_log "Installed ZukuJS $CLI_VERSION."
+case ":${PATH:-}:" in
+  *":$zuku_bin:"*) zuku_log 'Run: zuku --help (or zukujs --help)' ;;
+  *) printf 'Add to PATH for this shell: export PATH=%q:"$PATH"\n' "$zuku_bin" >&2 ;;
+esac
+printf 'Launcher: %s\n' "${zuku_launchers[@]}" >&2

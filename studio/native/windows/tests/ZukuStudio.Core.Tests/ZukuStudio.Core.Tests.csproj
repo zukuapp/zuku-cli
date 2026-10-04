@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Cross-platform runner for the native protocol self-test (no test framework packages).
+       dotnet run -c Release -p tests/ZukuStudio.Core.Tests -- --node <abs node> --fixture tests/stdio-fixture.mjs -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Zuku.Studio.Core.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ZukuStudio.Core\ZukuStudio.Core.csproj" />
+  </ItemGroup>
+</Project>

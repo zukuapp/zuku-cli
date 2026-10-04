@@ -93,6 +93,19 @@ const failed = async (t, code, options, extra) => {
   return r;
 };
 
+test('internal deployment key reaches only draft creation; invalid keys cause no credential or HTTP access', async t => {
+  const key = 'deployment_fixture:revision-01';
+  const accepted = await run(t, { context: { idempotencyKey: key } });
+  assert.ok(accepted.result);
+  assert.equal(accepted.requests[0].headers['idempotency-key'], undefined);
+  assert.equal(accepted.requests[1].headers['idempotency-key'], key);
+  for (const invalid of ['short', 'x'.repeat(129), 'deployment\r\nInjected: yes', 'deployment/?query', {}, null]) {
+    const denied = await failed(t, 'INVALID_INPUT', { context: { idempotencyKey: invalid } });
+    assert.equal(denied.credentialCalls, 0);
+    assert.equal(denied.requests.length, 0);
+  }
+});
+
 test('verified draft upload for .zwf, plain .zip and wrapper-dir .zip: exact multipart, bearer only, draft-only body', async t => {
   const cases = [[P, []], [pkgOf(playableZip(), { zip: true }), ['--title', 'Zip Game']], [pkgOf(WRAPPED_ZIP, { zip: true, entry: 'release/index.html' }), ['--title', 'Wrapped Game']]];
   for (const [pkg, flags] of cases) {
