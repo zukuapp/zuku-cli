@@ -1,0 +1,10 @@
+{
+  "canonical_commit": "91d9043e28d1a3596c5155a1cc608c87cdbbde9d",
+  "fixture_files_sha256": {
+    "input.zip": "5416a4a851253130f44031e8b97501a215cdd642259b6e2a284ad576b86d5433",
+    "output.zwf": "531795320a0fb94df7a8b45d01d754540756bb29f176049b236b141ad1a71c31",
+    "manifest.json": "98a321cba7767fddfc13cef6f1a7e650121d1005f10c81a4e069d1789b27b707"
+  },
+  "title": "Canonical game",
+  "format": "ZWF2 html5-sandbox/2"
+}

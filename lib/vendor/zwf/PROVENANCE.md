@@ -1,10 +1,13 @@
 # Vendored @zuku/zwf
 
 - Source: https://github.com/zukuapp/zwf (`src/format.mjs`, `LICENSE`)
-- Commit: `ac091fb8d24ef247e631d723c0d93f54c58bbde5`
-- License: MIT, Copyright (c) 2026 ZUKU (see `LICENSE` in this directory)
-- `format.mjs` SHA-256: `41f2a4fc79b125af6cdd7c0b1166818ce8ba1c8b227719fd237ca9c7c2f8a275`
-- Modifications: none. The file is byte-identical to upstream; it imports `fflate`,
-  pinned to `0.8.3` exactly as upstream `package.json` does.
-- Reason: `@zuku/zwf` is not published to the npm registry (`npm view @zuku/zwf` → 404 on 2026-10-03).
-  Replace this copy with the registry package once it is published.
+- Commit: `91d9043e28d1a3596c5155a1cc608c87cdbbde9d`
+- Version: `0.1.1`
+- License: MIT, Copyright (c) 2026 ZUKU (see `LICENSE`)
+- `format.mjs` SHA-256: `98dcb8530f792445f63937f333b7269360cb803756dce805dbe021a07cefecfe`
+- Modifications: none. Both files are byte-identical to the pinned upstream commit.
+- Dependency: `fflate` pinned to `0.8.3`.
+- Machine-readable provenance: `PROVENANCE.json`.
+- Until a registry publication is available, the CLI ships this exact upstream
+  implementation. `tests/zwf-conformance.test.mjs` verifies provenance and the
+  checked-in canonical compile/inspect fixtures.

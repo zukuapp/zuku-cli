@@ -1,0 +1,13 @@
+{
+  "source": "https://github.com/zukuapp/zwf",
+  "commit": "91d9043e28d1a3596c5155a1cc608c87cdbbde9d",
+  "version": "0.1.1",
+  "files": {
+    "src/format.mjs": "98dcb8530f792445f63937f333b7269360cb803756dce805dbe021a07cefecfe",
+    "LICENSE": "1188d32ab2c33d29b5072e77aa5d7f5a0f4f705536a7a1747319dbda55d30646"
+  },
+  "modifications": [],
+  "dependency": {
+    "fflate": "0.8.3"
+  }
+}
