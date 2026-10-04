@@ -49,7 +49,7 @@ zukujs upload . --verify          # 업로드 후 초안 생성(공개하지 않
 
 제공자와 모델은 `provider`, `model`, `auth`로 관리합니다. 비공식 Codex 인증은 명시적인 `--experimental`과 `(exp!)` 표시를 사용합니다. GTK/WebKit, AppKit/WKWebView, WPF/WebView2 Studio와 로컬 Browser Adapter는 같은 Core에 연결하며, 원격 클라우드 실행은 미정입니다. 플랫폼별 실제 검증 여부는 [검증 기록](docs/verification.md)을 확인하세요.
 
-웹 프레임워크 패키지 `zukujs`가 설치된 프로젝트에서는 `zukujs dev`, `build`, `start` 등 프레임워크 명령으로 위임합니다. 자동 설치는 하지 않으며 [명령 참조](docs/commands.md#웹-프레임워크-명령)의 출력·설치 규칙을 따릅니다.
+웹 프레임워크 패키지 `zukujs`, 또는 `package.json.zukujs` 식별 정보가 있는 공식 `next` 호환 포크가 설치된 프로젝트에서는 `zukujs dev`, `build`, `start` 등 프레임워크 명령으로 위임합니다. 자동 설치는 하지 않으며 [명령 참조](docs/commands.md#웹-프레임워크-명령)의 출력·식별·설치 규칙을 따릅니다.
 
 ## 기존 upload 인증 요약
 

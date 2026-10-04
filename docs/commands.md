@@ -100,7 +100,11 @@ zukujs status [--check-api]
 
 ## 웹 프레임워크 명령
 
-이름 변경된 프레임워크 패키지 `zukujs`가 프로젝트에 설치되어 있으면 `dev`, `build`, `start`, `info`, `analyze`, `typegen`, `telemetry`, `upgrade`와 프레임워크의 나머지 등록 명령을 해당 패키지의 실행 파일로 전달합니다. 프레임워크는 [별도 저장소](https://github.com/zukuapp/zukujs)의 소스 설치 절차를 따르며 CLI가 자동으로 설치하지 않습니다.
+기존 프레임워크 패키지 `zukujs`, 또는 공식 ZukuJS 식별 정보를 포함하면서 상류의 `next` 패키지 이름을 유지한 배포가 설치되어 있으면 `dev`, `build`, `start`, `info`, `analyze`, `typegen`, `telemetry`, `upgrade`와 프레임워크의 나머지 등록 명령을 해당 패키지의 실행 파일로 전달합니다. CLI가 프레임워크를 자동으로 설치하지 않습니다.
+
+`next` 형식은 패키지 자체의 `package.json.zukujs`에 `name: "ZukuJS"`, 유효한 제품 버전, `command_protocol: "zuku-command/1"`이 있어야 합니다. `upstream`이 기록돼 있으면 패키지 버전과도 일치해야 합니다. 실행 파일은 상류와 같은 `bin.next`를 사용하며, 통합 CLI의 전역 `zuku`·`zukujs` 진입점은 바뀌지 않습니다. 일반 Next.js 설치나 디렉터리 이름만으로 ZukuJS 배포라고 판단하지 않습니다. 이 메타데이터는 배포 식별 신호이며 코드의 무결성을 인증하는 서명은 아닙니다.
+
+프레임워크 [소스 저장소](https://github.com/zukuapp/zukujs)의 원본 패키지는 `next`라는 이름을 유지합니다. 소스 체크아웃만으로 빌드된 프레임워크가 설치되는 것은 아니며, 해당 식별 정보를 포함하는 ZUKU 배포 변환·패키징 경로가 필요합니다. 여기서 검증한 것은 식별 정보를 가진 격리 소비자에서의 명령 전달·취소·인수·종료 상태입니다. 실제 애플리케이션의 JSX 컴파일, 개발 서버, HMR, SSR·hydration 또는 프로덕션 시작 검증을 대신하지 않습니다.
 
 ```sh
 zukujs dev --help
@@ -109,3 +113,10 @@ zukujs start
 ```
 
 네이티브 인수·출력·종료 상태를 그대로 전달하므로, 이 명령의 `--json` 지원은 프레임워크 명령 자체의 규칙을 따릅니다. 게임 명령의 JSON 봉투를 적용하지 않습니다. 프레임워크가 없으면 `FRAMEWORK_UNAVAILABLE`로 실패합니다. 프로젝트 디렉터리에서 프레임워크를 먼저 찾고 CLI 설치 위치에서도 찾으며, 같은 CLI로 돌아오는 실행 파일이나 패키지 밖으로 나가는 경로는 거부합니다.
+
+The adapter accepts the existing `zukujs` package and a Next-compatible fork with
+an explicit `package.json.zukujs` identity. It keeps the upstream `next` bin and
+both Unified CLI aliases intact. Vanilla Next.js is not promoted automatically.
+These delegation fixtures establish argument, stream, exit-code and cancellation
+behavior; they do not establish a production framework distribution or application
+SSR, hydration or HMR support.
