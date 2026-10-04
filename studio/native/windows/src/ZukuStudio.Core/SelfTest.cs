@@ -332,6 +332,14 @@ public static class SelfTest
             var found = InstallLocator.Locate(exe, version, nodeRelative);
             run.Check(found.Assets.Count == 11 && found.HostEntry.EndsWith("studio-host.mjs") && found.NodePath == Path.GetFullPath(node), "installed release located by exact marker");
             string Code(Action action) { try { action(); return "OK"; } catch (InstallationException error) { return error.Code; } }
+            var canonicalPackage = Path.Combine(release, "npm", "node_modules", "@zuku", "cli");
+            Directory.CreateDirectory(canonicalPackage);
+            File.WriteAllText(Path.Combine(canonicalPackage, "package.json"), "{\"name\":\"foreign-package\"}");
+            run.Check(Code(() => InstallLocator.Locate(exe, version, nodeRelative)) == "STUDIO_PACKAGE_INVALID", "invalid canonical entry cannot fall back to valid legacy package");
+            Directory.Delete(canonicalPackage, true);
+            Directory.Move(package, canonicalPackage); package = canonicalPackage;
+            Write("package.json", "{\"name\":\"@zuku/cli\",\"version\":\"0.3.0\",\"bin\":{\"zuku\":\"./index.mjs\",\"zukujs\":\"./index.mjs\"}}");
+            run.Check(InstallLocator.Locate(exe, version, nodeRelative).PackageRoot == canonicalPackage, "canonical package uses the same managed runtime and host");
             run.Check(Code(() => InstallLocator.Locate(exe, "0.3.1", nodeRelative)) == "STUDIO_VERSION_MISMATCH", "version must match exactly");
             run.Check(Code(() => InstallLocator.Locate(Path.Combine(release, "studio"), version, nodeRelative)) == "STUDIO_LAYOUT_UNSUPPORTED", "unexpected layout refused");
             Marker(Path.Combine(temp.FullName, "node.exe"));

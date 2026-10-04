@@ -1,5 +1,7 @@
 # ZUKU Studio for Windows (native shell)
 
+New source packages use `@zuku/cli`. The locator retains the exact legacy `@zukujs/cli` path when the canonical path is absent, with the same managed runtime, version and file trust checks. An invalid canonical entry fails closed. Existing 0.3.0 assets and hashes remain unchanged.
+
 `studio/native/windows/` is the Windows desktop shell for ZUKU Studio: a small WPF
 window hosting Microsoft Edge WebView2. Like the Linux GTK/WebKit shell, it owns no
 agent, provider, credential or project logic. It does three things:
@@ -60,7 +62,7 @@ renderer supplies. It accepts exactly the per-user release layout that
 %LOCALAPPDATA%\ZukuJS\releases\cli-<version>-<sha12>\
   install.json                      {schema:'zukujs-user-install/1', version, sha256, node}
   runtime\node.exe                  managed Node; must equal install.json "node"
-  npm\node_modules\@zukujs\cli\     package.json name '@zukujs/cli', same version, bin zuku/zukujs
+  npm\node_modules\@zuku\cli\     package.json name '@zuku/cli', same version, bin zuku/zukujs
   studio\windows\ZukuStudio.exe     (+ its DLLs)   <- installer must place the publish output here
 ```
 

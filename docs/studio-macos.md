@@ -1,5 +1,7 @@
 # ZUKU Studio for macOS (native shell)
 
+New source packages use `@zuku/cli`. The locator retains the exact legacy `@zukujs/cli` path when the canonical path is absent, with the same managed runtime, version and file trust checks. An invalid canonical entry fails closed. Existing 0.3.0 assets and hashes remain unchanged.
+
 `studio/native/macos/` is the macOS desktop host for ZUKU Studio. It is a small Swift
 AppKit app with two `WKWebView`s. It does not bundle Electron or a second Node runtime,
 and it has no agent of its own. Every agent, provider, auth, session and project
@@ -7,7 +9,7 @@ operation goes to the same Agent Core that `zuku`/`zukujs` use. The shell starts
 a child process running the shared typed stdio host:
 
 ```text
-<managed node> <@zukujs/cli>/lib/studio-host.mjs --stdio
+<managed node> <@zuku/cli>/lib/studio-host.mjs --stdio
 ```
 
 `Foundation.Process` starts it with a fixed executable and a fixed argv. No shell is
@@ -52,7 +54,7 @@ removed from the child environment.
   zuku-runtime/                     sibling payload: the ONE shared CLI install
     install.json                    {"schema":"zukujs-user-install/1","version","sha256","node"}
     runtime/bin/node                managed Node (install.json "node" must be exactly this path)
-    npm/lib/node_modules/@zukujs/cli/
+    npm/lib/node_modules/@zuku/cli/
 ```
 
 Studio looks only at `<bundle parent>/zuku-runtime`. It never searches `PATH`, the home
@@ -61,7 +63,7 @@ only when all of these hold:
 
 * `install.json` has the installer schema, a SHA-256 value, `version == ZukuCLIVersion`,
   and `node` equal to the managed `runtime/bin/node`. A system Node is rejected.
-* `package.json` has `name == "@zukujs/cli"`, the same version, and
+* `package.json` has `name == "@zuku/cli"`, the same version, and
   `bin.zuku == bin.zukujs == "./index.mjs"`.
 * `lib/studio-host.mjs` exists, and the package's `lib/agent-protocol/schema.mjs` is
   byte-identical to the schema bundled in the app. This catches version skew between the

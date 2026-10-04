@@ -3,7 +3,7 @@
 import fs from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import {
-  PRODUCT, CLI_PACKAGE, MANAGED_NODE_VERSION, INSTALL_MARKER_SCHEMA, MANIFEST_SCHEMA, ASSET_RECORD_SCHEMA,
+  PRODUCT, CLI_PACKAGES, cliRootForPackage, MANAGED_NODE_VERSION, INSTALL_MARKER_SCHEMA, MANIFEST_SCHEMA, ASSET_RECORD_SCHEMA,
   SHARED_PAYLOAD, PlatformBuildError, platformDescriptor, archiveName, placedPath,
 } from './matrix.mjs';
 import { sha256, relativePath, hashRepositoryFiles } from './fs-safety.mjs';
@@ -55,8 +55,8 @@ export function gitSource(root, nativeDir, boundPaths) {
 async function readPackage(rootReal) {
   const [entry] = await hashRepositoryFiles(rootReal, ['package.json'], { keepBytes: true });
   const pkg = JSON.parse(Buffer.from(entry.bytes).toString('utf8'));
-  if (pkg.name !== CLI_PACKAGE || !/^\d+\.\d+\.\d+$/.test(pkg.version ?? '') || pkg.bin?.zuku !== './index.mjs' || pkg.bin?.zukujs !== './index.mjs') fail('PACKAGE_INVALID', 'package.json is not the single @zukujs/cli payload with zuku and zukujs aliases.');
-  return { version: pkg.version, sha256: entry.sha256 };
+  if (!CLI_PACKAGES.includes(pkg.name) || !/^\d+\.\d+\.\d+$/.test(pkg.version ?? '') || pkg.bin?.zuku !== './index.mjs' || pkg.bin?.zukujs !== './index.mjs') fail('PACKAGE_INVALID', 'package.json is not the single CLI payload with zuku and zukujs aliases.');
+  return { name: pkg.name, version: pkg.version, sha256: entry.sha256 };
 }
 export const readPackageVersion = async rootReal => (await readPackage(rootReal)).version;
 
@@ -73,14 +73,14 @@ export async function createAsset({ rootReal, platform, files, executable, epoch
   // Tracked native sources only; a tracked file deleted in the working tree is reported by lstat.
   const sourceFiles = await hashRepositoryFiles(rootReal, vcs.tracked);
   const shared = await hashRepositoryFiles(rootReal, SHARED_PAYLOAD);
-  const { layout } = descriptor;
+  const layout = { ...descriptor.layout, cliRoot: cliRootForPackage(pkg.name, descriptor.os) };
   const manifest = {
     schema: MANIFEST_SCHEMA,
     product: PRODUCT,
     protocolVersion: 1,
     version: pkg.version,
     platform: { id: descriptor.id, os: descriptor.os, arch: descriptor.arch },
-    cli: { name: CLI_PACKAGE, version: pkg.version, packageJsonSHA256: pkg.sha256, aliases: ['zuku', 'zukujs'] },
+    cli: { name: pkg.name, version: pkg.version, packageJsonSHA256: pkg.sha256, aliases: ['zuku', 'zukujs'] },
     source: {
       gitCommit: vcs.commit,
       commitTime: vcs.commitTime,
@@ -145,7 +145,8 @@ export async function verifyAsset(record, archive, { cliRoot } = {}) {
   if (!manifestEntry || sha256(manifestEntry.bytes) !== record.manifestSHA256) fail('VERIFY_FAILED', 'Manifest missing or modified.');
   const manifest = JSON.parse(Buffer.from(manifestEntry.bytes).toString('utf8'));
   if (manifest.schema !== MANIFEST_SCHEMA || manifest.protocolVersion !== 1 || manifest.platform?.id !== descriptor.id || manifest.version !== record.version || manifest.source?.gitCommit !== record.gitCommit || manifest.source.treeState !== record.treeState) fail('VERIFY_FAILED', 'Manifest does not match the asset record or protocol.');
-  if (manifest.node?.version !== MANAGED_NODE_VERSION || manifest.node?.bundled !== false || manifest.launcher?.managedNode !== descriptor.layout.managedNode || manifest.launcher?.host !== `${descriptor.layout.cliRoot}/lib/studio-host.mjs`) fail('VERIFY_FAILED', 'Manifest must reference the single installer-managed Node runtime and shared host.');
+  if (!CLI_PACKAGES.includes(manifest.cli?.name) || manifest.cli.version !== manifest.version || !Array.isArray(manifest.cli.aliases) || manifest.cli.aliases.join('\n') !== 'zuku\nzukujs') fail('VERIFY_FAILED', 'Manifest CLI identity mismatch.');
+  if (manifest.node?.version !== MANAGED_NODE_VERSION || manifest.node?.bundled !== false || manifest.launcher?.managedNode !== descriptor.layout.managedNode || manifest.launcher?.host !== `${cliRootForPackage(manifest.cli.name, descriptor.os)}/lib/studio-host.mjs`) fail('VERIFY_FAILED', 'Manifest must reference the single installer-managed Node runtime and shared host.');
   if (!Array.isArray(manifest.sharedPayload) || manifest.sharedPayload.map(entry => entry?.path).join('\n') !== [...SHARED_PAYLOAD].sort().join('\n')) fail('VERIFY_FAILED', 'Manifest shared payload list is not the expected allowlist.');
   if (!Array.isArray(manifest.artifacts) || !manifest.artifacts.length) fail('VERIFY_FAILED', 'Manifest lists no artifacts.');
   const listed = new Set([MANIFEST_NAME]);
@@ -166,7 +167,7 @@ export async function verifySharedPayload(cliRoot, manifest) {
   const rootReal = await fs.realpath(cliRoot);
   const [entry] = await hashRepositoryFiles(rootReal, ['package.json'], { keepBytes: true });
   const pkg = JSON.parse(Buffer.from(entry.bytes).toString('utf8'));
-  if (pkg.name !== CLI_PACKAGE || pkg.version !== manifest.cli.version) fail('VERIFY_FAILED', 'Installed CLI version does not match the native asset.');
+  if (!CLI_PACKAGES.includes(pkg.name) || pkg.name !== manifest.cli.name || pkg.version !== manifest.cli.version || pkg.bin?.zuku !== './index.mjs' || pkg.bin?.zukujs !== './index.mjs') fail('VERIFY_FAILED', 'Installed CLI identity/version does not match the native asset.');
   // The shared typed stdio host the shell launches must ship in the same package.
   await hashRepositoryFiles(rootReal, ['lib/studio-host.mjs']).catch(() => fail('VERIFY_FAILED', 'The CLI package does not contain lib/studio-host.mjs.'));
   const actual = await hashRepositoryFiles(rootReal, manifest.sharedPayload.map(entry => entry.path))

@@ -5,7 +5,7 @@ It is not a second product and does not carry a second CLI, agent or Node runtim
 
 | Piece | What it is | Who delivers it |
 | --- | --- | --- |
-| `@zukujs/cli` tarball | `zuku`/`zukujs` aliases (one `index.mjs`), Agent Core, provider/auth/session store, Browser Adapter, `lib/studio-host.mjs`, renderer (`studio/renderer/`), `studio/native/bridge.js`, the shared protocol schema and the five mandatory skills | existing official installer (SHA-pinned) |
+| `@zuku/cli` tarball | `zuku`/`zukujs` aliases (one `index.mjs`), Agent Core, provider/auth/session store, Browser Adapter, `lib/studio-host.mjs`, renderer (`studio/renderer/`), `studio/native/bridge.js`, the shared protocol schema and the five mandatory skills | npm source package; native installer release requires separate matching SHA-pinned assets |
 | Managed Node `22.22.3` | the one runtime every frontend uses | existing official installer (official nodejs.org archive + SHA) |
 | `zuku-studio-<version>-<platform>.<tar.gz\|zip>` | only the compiled native shell and its `source-manifest.json` | built here; fetching/installing is root installer integration (below) |
 
@@ -84,7 +84,7 @@ directories are never written.
   - `install.json`, schema `zukujs-user-install/1`.
   - `managedNode`: `runtime/bin/node` or `runtime\node.exe`, with `requiresManagedNode: true`. The macOS and Windows locators both reject an `install.json` whose `node` is not that managed runtime.
   - `<cliRoot>/package.json`, `<cliRoot>/index.mjs` and `<cliRoot>/lib/studio-host.mjs` with `hostArgs: ["--stdio"]`.
-  - `<cliRoot>` is `npm/lib/node_modules/@zukujs/cli` on Unix and `npm/node_modules/@zukujs/cli` on Windows, the layout the existing installers create.
+  - `<cliRoot>` is `npm/lib/node_modules/@zuku/cli` on Unix and `npm/node_modules/@zuku/cli` on Windows, the layout the existing installers create.
 - `placement`, `executable`, `artifacts[]`: install-relative path, size, SHA-256 and executable bit of every shipped file.
 - `publication`: always `{released: false, signed: false, notarized: false}`.
 
@@ -111,7 +111,7 @@ Manifests contain no build-machine absolute path, username, secret or token.
   - links or special entries in tar and zip, including Unix `S_IFLNK` zip attributes
   - path traversal, duplicate entries or mode mismatches
 
-  With `--cli-root`, it also confirms the installed `@zukujs/cli` version, the presence of `lib/studio-host.mjs`, and the shared-payload bytes.
+  With `--cli-root`, it also confirms the installed `@zuku/cli` version, the presence of `lib/studio-host.mjs`, and the shared-payload bytes.
 
 ## CI: `.github/workflows/studio-platform.yml`
 

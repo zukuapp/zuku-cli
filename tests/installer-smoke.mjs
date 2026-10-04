@@ -58,7 +58,7 @@ try {
   }
   const { renderInstallers } = await import(pathToFileURL(rendererPath));
   const manifest = JSON.parse(await fs.readFile(path.join(cliRoot, 'package.json'), 'utf8'));
-  assert.equal(manifest.name, '@zukujs/cli');
+  assert.equal(manifest.name, '@zuku/cli');
   for (const alias of aliases) assert.equal(manifest.bin[alias], './index.mjs', 'Both aliases must point to one existing runtime.');
   assert.ok(manifest.files.every(name => typeof name === 'string'), 'The package file allowlist contains a non-string.');
   const bundled = manifest.bundledDependencies ?? manifest.bundleDependencies ?? [];
@@ -182,7 +182,7 @@ try {
     const markerRoot = path.join(prefix, 'releases', 'cli-' + manifest.version + '-' + archiveSHA.slice(0, 12));
     const installation = JSON.parse(await fs.readFile(path.join(markerRoot, 'install.json'), 'utf8'));
     assert.equal(run(installation.node, ['--version'], {env}).trim(), process.version, 'Installed launcher must use the selected test runtime.');
-    const packageRoot = path.join(markerRoot, 'npm', ...(windows ? [] : ['lib']), 'node_modules/@zukujs/cli');
+    const packageRoot = path.join(markerRoot, 'npm', ...(windows ? [] : ['lib']), 'node_modules/@zuku/cli');
     const require = createRequire(path.join(packageRoot, 'package.json'));
     for (const dependency of ['fflate', 'jose', 'playwright-core']) {
       const resolved = require.resolve(dependency);

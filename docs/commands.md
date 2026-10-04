@@ -1,6 +1,6 @@
 # 명령 참조
 
-`zuku`와 `zukujs`는 같은 명령입니다(`@zukujs/cli` 소스 버전 0.3.0). 기존 명령에 `--json`을 붙이면 `zuku-command/1` 봉투로 출력합니다. 에이전트·제공자·Studio 명령과 현재 호환 경계는 [통합 CLI](unified-cli.md)에 있습니다.
+`zuku`와 `zukujs`는 같은 명령입니다(`@zuku/cli` 소스 버전 0.3.1). 기존 명령에 `--json`을 붙이면 `zuku-command/1` 봉투로 출력합니다. 에이전트·제공자·Studio 명령과 현재 호환 경계는 [통합 CLI](unified-cli.md)에 있습니다.
 
 ## 명령 요약
 

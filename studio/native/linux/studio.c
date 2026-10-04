@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <errno.h>
 #include "protocol.h"
 
 #ifndef STUDIO_NODE
@@ -84,14 +85,19 @@ static gboolean trusted_ui(void) {
   return TRUE;
 }
 static gboolean locate_release(const char *directory) {
-  char *marker = g_build_filename(directory, "install.json", NULL), *package_path = g_build_filename(directory, "npm", "lib", "node_modules", "@zukujs", "cli", "package.json", NULL);
+  char *canonical = g_build_filename(directory, "npm", "lib", "node_modules", "@zuku", "cli", NULL);
+  struct stat package_info; int exists = lstat(canonical, &package_info);
+  if (exists && errno != ENOENT) { g_free(canonical); return FALSE; }
+  const char *scope = exists ? "@zukujs" : "@zuku", *package_name = exists ? "@zukujs/cli" : "@zuku/cli";
+  g_free(canonical);
+  char *marker = g_build_filename(directory, "install.json", NULL), *package_path = g_build_filename(directory, "npm", "lib", "node_modules", scope, "cli", "package.json", NULL);
   char *marker_text = NULL, *package_text = NULL; gsize marker_length = 0, package_length = 0; gboolean valid = FALSE;
   if (trusted_file(marker, FALSE) && trusted_file(package_path, FALSE) && g_file_get_contents(marker, &marker_text, &marker_length, NULL) && marker_length <= 4096 && g_file_get_contents(package_path, &package_text, &package_length, NULL) && package_length <= 65536) {
     JSCContext *json = jsc_context_new(); JSCValue *record = studio_parse(json, marker_text, marker_length), *package = studio_parse(json, package_text, package_length);
     char *schema = record ? studio_string(record, "schema") : NULL, *version = record ? studio_string(record, "version") : NULL, *sha = record ? studio_string(record, "sha256") : NULL, *node = record ? studio_string(record, "node") : NULL;
     char *name = package ? studio_string(package, "name") : NULL, *package_version = package ? studio_string(package, "version") : NULL;
     char *expected_node = g_build_filename(directory, "runtime", "bin", "node", NULL);
-    valid = !g_strcmp0(schema, "zukujs-user-install/1") && !g_strcmp0(name, "@zukujs/cli") && version && !g_strcmp0(version, package_version) && sha && g_regex_match_simple("^[a-f0-9]{64}$", sha, 0, 0) && node && !g_strcmp0(node, expected_node) && trusted_file(expected_node, TRUE);
+    valid = !g_strcmp0(schema, "zukujs-user-install/1") && !g_strcmp0(name, package_name) && version && !g_strcmp0(version, package_version) && sha && g_regex_match_simple("^[a-f0-9]{64}$", sha, 0, 0) && node && !g_strcmp0(node, expected_node) && trusted_file(expected_node, TRUE);
     if (valid) { installation_root = g_path_get_dirname(package_path); installation_node = g_strdup(node); }
     g_free(expected_node);
     g_free(schema); g_free(version); g_free(sha); g_free(node); g_free(name); g_free(package_version); g_clear_object(&record); g_clear_object(&package); g_object_unref(json);
@@ -113,7 +119,7 @@ static gboolean locate_installation(const char *node_option) {
       if (g_file_get_contents(marker, &text, &length, NULL) && length <= 65536) {
         JSCContext *json = jsc_context_new(); JSCValue *package = studio_parse(json, text, length);
         char *name = package ? studio_string(package, "name") : NULL;
-        if (!g_strcmp0(name, "@zukujs/cli")) installation_root = g_strdup(directory);
+        if (!g_strcmp0(name, "@zuku/cli") || !g_strcmp0(name, "@zukujs/cli")) installation_root = g_strdup(directory);
         g_free(name); g_clear_object(&package); g_object_unref(json);
       }
       g_free(text);

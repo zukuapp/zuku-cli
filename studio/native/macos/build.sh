@@ -33,7 +33,8 @@ here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 repo=$(cd -- "$here/../../.." && pwd -P)
 version=$(plutil -extract version raw -o - "$repo/package.json")
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || fail 'package.json version is not a plain semver.'
-[[ "$(plutil -extract name raw -o - "$repo/package.json")" == '@zukujs/cli' ]] || fail 'package.json is not @zukujs/cli.'
+package_name=$(plutil -extract name raw -o - "$repo/package.json")
+[[ "$package_name" == '@zuku/cli' || "$package_name" == '@zukujs/cli' ]] || fail 'package.json is not the CLI payload.'
 out=${out:-"$here/build/$arch"}
 mkdir -p -- "$out"
 out=$(cd -- "$out" && pwd -P)
@@ -91,13 +92,14 @@ if [[ $stage -eq 1 ]]; then
   mkdir -p -- "$runtime/runtime/bin" "$runtime/npm"
   install -m 0755 "$node" "$runtime/runtime/bin/node"
   (cd -- "$repo" && NODE_OPTIONS='' npm pack --silent --pack-destination "$work" >/dev/null)
-  tarball=$(ls "$work"/zukujs-cli-*.tgz)
+  tarball=$(ls "$work"/zuku-cli-*.tgz "$work"/zukujs-cli-*.tgz 2>/dev/null || true)
+  [[ -f "$tarball" ]] || fail 'Expected one CLI package archive.'
   NODE_OPTIONS='' PATH="$runtime/runtime/bin:$PATH" npm install --global --ignore-scripts --no-audit --no-fund --update-notifier=false \
     --prefix "$runtime/npm" --cache "$work/npm-cache" "$tarball" >&2
   sha=$(shasum -a 256 "$tarball" | cut -d' ' -f1)
   printf '{"schema":"zukujs-user-install/1","version":"%s","sha256":"%s","node":"%s"}\n' "$version" "$sha" "$runtime/runtime/bin/node" > "$runtime/install.json"
   chmod 0600 "$runtime/install.json"
-  if [[ ! -f "$runtime/npm/lib/node_modules/@zukujs/cli/lib/studio-host.mjs" ]]; then
+  if [[ ! -f "$runtime/npm/lib/node_modules/$package_name/lib/studio-host.mjs" ]]; then
     printf 'Note: the packed CLI has no lib/studio-host.mjs yet; Studio will report STUDIO_RUNTIME_UNTRUSTED until the host entry ships.\n' >&2
   fi
   if [[ $runs_here -eq 1 ]]; then "$contents/MacOS/ZukuStudio" --stdio-test; fi

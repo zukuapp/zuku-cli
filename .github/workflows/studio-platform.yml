@@ -176,7 +176,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/pack"
           npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP/pack"
           cd "$RUNNER_TEMP/pack"
-          tar -xzf zukujs-cli-*.tgz
+          tar -xzf zuku-cli-*.tgz
           cd "$GITHUB_WORKSPACE"
           node scripts/platform-build/cli.mjs verify --out "$RUNNER_TEMP/studio-asset" --cli-root "$RUNNER_TEMP/pack/package"
 

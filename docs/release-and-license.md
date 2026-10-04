@@ -2,8 +2,8 @@
 
 ## 배포 상태
 
-- `@zukujs/cli`는 npm 레지스트리에 게시되지 않았습니다. [시작하기](getting-started.md)의 소스 체크아웃 방법으로 실행하세요.
-- 게시 여부와 절차는 유지 관리자가 결정합니다. 이 문서는 게시를 안내하지 않습니다.
+- `@zuku/cli` 0.3.1은 npm 배포 후보입니다. 게시 확인 전에는 [시작하기](getting-started.md)의 소스 체크아웃 방법으로 실행하세요.
+- npm 소스 패키지와 네이티브 Studio 배포는 별도입니다. 기존 0.3.0 GUI 자산과 검증 기록은 유지하며 새 0.3.1 GUI 릴리스를 주장하지 않습니다.
 
 ## 라이선스 표기
 
@@ -13,7 +13,7 @@
 
 | 구성 요소 | 출처 | 라이선스 |
 | --- | --- | --- |
-| ZWF2 구현 | [`zukuapp/zwf`](https://github.com/zukuapp/zwf) 0.1.0, 저장소에 포함(vendored) | MIT. 고지를 함께 배포해야 함 |
+| ZWF2 구현 | [`zukuapp/zwf`](https://github.com/zukuapp/zwf) 0.1.1, 저장소에 포함(vendored); 고정 소스·해시는 `lib/vendor/zwf/PROVENANCE.json` | MIT. 고지를 함께 배포해야 함 |
 | `fflate` 0.8.3 | npm 의존성 | 해당 패키지의 라이선스를 따름 |
 
 ## 관련 저장소
