@@ -15,9 +15,9 @@ public static partial class JsonSafety
     [GeneratedRegex("^[A-Za-z0-9_-]{1,128}$", RegexOptions.CultureInvariant)] public static partial Regex Id();
     [GeneratedRegex("^[a-z][a-z0-9_-]{0,63}$", RegexOptions.CultureInvariant)] public static partial Regex Provider();
     [GeneratedRegex("^[A-Z][A-Z0-9_]{0,63}$", RegexOptions.CultureInvariant)] public static partial Regex Code();
-    [GeneratedRegex("[\\x00-\\x08\\x0b\\x0c\\x0e-\\x1f\\x7f]", RegexOptions.CultureInvariant)] static partial Regex Control();
-    [GeneratedRegex("\\x1b\\[[0-?]*[ -/]*[@-~]", RegexOptions.CultureInvariant)] static partial Regex Ansi();
-    [GeneratedRegex("^(?:node_modules|credentials?|secrets?)$", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)] static partial Regex ReservedSegment();
+    [GeneratedRegex("[\\x00-\\x08\\x0b\\x0c\\x0e-\\x1f\\x7f]", RegexOptions.CultureInvariant)] private static partial Regex Control();
+    [GeneratedRegex("\\x1b\\[[0-?]*[ -/]*[@-~]", RegexOptions.CultureInvariant)] private static partial Regex Ansi();
+    [GeneratedRegex("^(?:node_modules|credentials?|secrets?)$", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)] private static partial Regex ReservedSegment();
 
     public static bool IsId(string? value) => value is not null && Id().IsMatch(value);
 
