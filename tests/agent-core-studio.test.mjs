@@ -15,6 +15,7 @@ import { createCoreStorage } from '../lib/agent-core/storage.mjs';
 import { createStudioHostContext } from '../lib/studio-context.mjs';
 import { createStudioStdio } from '../lib/studio-stdio.mjs';
 import { createBrowserClient, ProtocolError } from '../lib/agent-protocol/index.mjs';
+import { readProtectedStore } from '../lib/accounts/windows-protected-store.mjs';
 
 let serial = 0;
 const envelope = (method, params = {}) => ({ protocolVersion: 1, id: `studio_req_${++serial}`, method, params });
@@ -27,7 +28,7 @@ async function fixture(t) {
     const original = await readFile(join(root, 'src/game.js'), 'utf8');
     return { output: { actions: [{ tool: 'patch_file', input_json: JSON.stringify({ path: 'src/game.js', expected_sha256: hash(original), edits: [{ old: original.slice(0, 20), new: `/* jump proof */\n${original.slice(0, 20)}` }] }) }], done: true }, usage: {} };
   } };
-  const runtime = await createProviderRuntime({ home, environment: {} });
+  const runtime = await createProviderRuntime({ home, stateDir: join(home, '.config/zukujs/providers'), environment: {} });
   const host = await startCoreHost({ stateDir: join(home, 'core'), coreOptions: { providerRuntime: { ...runtime, async resolveStageProvider() { return provider; } } } });
   const client = await createCoreClient({ stateDir: host.stateDir, autostart: false });
   const context = await createStudioHostContext({ coreClient: client });
@@ -87,7 +88,10 @@ test('native auth frames use the real Core store and readonly preview serves onl
   let status; for (let i = 0; i < 100; i++) { status = await f.call('auth.list'); if (status.requests.find(job => job.authRequestId === accepted.authRequestId)?.status === 'completed') break; await pause(5); }
   assert.equal(status.auth.find(item => item.provider === 'openai').status, 'configured');
   assert.ok(!JSON.stringify(f.messages).includes(secret));
-  assert.equal(JSON.parse(await readFile(join(f.home, '.config/zukujs/providers/secrets.json'), 'utf8')).providers.openai.apiKey, secret);
+  const secretFile = join(f.home, '.config/zukujs/providers', process.platform === 'win32' ? 'secrets.dpapi' : 'secrets.json');
+  const secretText = process.platform === 'win32' ? await readProtectedStore(secretFile) : await readFile(secretFile, 'utf8');
+  assert.equal(JSON.parse(secretText).providers.openai.apiKey, secret);
+  if (process.platform === 'win32') assert.ok(!(await readFile(secretFile)).includes(Buffer.from(secret)));
   const big = `/*${'asset fixture '.repeat(12000)}*/`;
   await writeFile(join(f.root, 'src/large.js'), big);
   const project = await f.select(), preview = await f.call('game.preview', { projectHandle: project.id });
@@ -118,20 +122,21 @@ test('failed durable tool-start journal delivery prevents an actual shared-scope
   let result; for (let i = 0; i < 100; i++) { result = await call('session.get', { sessionId: session.id }); if (result.state !== 'running') break; await pause(5); }
   assert.equal(result.state, 'failed'); assert.equal(result.result.code, 'CORE_STATE_UNSAFE');
   assert.equal(await readFile(join(root, 'src/game.js'), 'utf8'), original);
-  const journal = await readFile(join(home, 'core/journals', `${session.id}.ndjson`), 'utf8');
+  for await (const event of core.subscribe({ sessionId: session.id }, { kind: 'native', id: 'durable_native' })) if (event.type === 'agent.error') break;
+  const journal = await storage.read('journal', session.id);
   assert.match(journal, /tool.requested/); assert.ok(!journal.includes('tool.completed')); assert.ok(!journal.includes('agent.completed'));
 });
 
 test('separate Studio process uses actual inherited pipes and detaches from an existing shared host', async t => {
   const home = await mkdtemp(join(tmpdir(), 'zuku-studio-process-')); await create(['game'], { cwd: home });
-  const host = await startCoreHost({ stateDir: join(home, 'core'), home, environment: {} });
+  const host = await startCoreHost({ stateDir: join(home, 'core'), home, environment: {}, providerContext: { stateDir: join(home, '.config/zukujs/providers') } });
   const code = `import {createStudioHostContext} from ${JSON.stringify(new URL('../lib/studio-context.mjs', import.meta.url).href)}; import {startStudioHost} from ${JSON.stringify(new URL('../lib/studio-host.mjs', import.meta.url).href)}; const context=await createStudioHostContext({stateDir:process.argv[1],autostart:false}); const bridge=await startStudioHost(context,{adapterOptions:{port:0}}); await bridge.done;`;
   const child = spawn(process.execPath, ['--input-type=module', '-e', code, host.stateDir], { stdio: ['pipe', 'pipe', 'pipe'] });
   let bytes = '', stderr = '', ready; const startup = new Promise(resolve => { ready = resolve; });
   child.stdout.on('data', chunk => { bytes += chunk.toString(); if (bytes.includes('host.ready')) ready(); }); child.stderr.on('data', chunk => { stderr += chunk.toString(); });
   const stopped = new Promise((resolve, reject) => { child.once('error', reject); child.once('exit', (code, signal) => resolve({ code, signal })); });
   t.after(async () => { if (child.exitCode === null) child.kill('SIGTERM'); await stopped; await host.close(); await rm(home, { recursive: true, force: true }); });
-  await Promise.race([startup, pause(3000).then(() => { if (!bytes.includes('host.ready')) throw new Error('Studio process did not start'); })]);
+  await Promise.race([startup, pause(process.platform === 'win32' ? 30000 : 3000).then(() => { if (!bytes.includes('host.ready')) throw new Error('Studio process did not start'); })]);
   const request = envelope('hello'); child.stdin.write(JSON.stringify(request) + '\n');
   for (let i = 0; i < 100 && !bytes.includes(request.id); i++) await pause(5);
   const reply = bytes.trim().split('\n').map(line => JSON.parse(line)).find(message => message.id === request.id);

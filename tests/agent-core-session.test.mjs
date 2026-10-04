@@ -8,6 +8,7 @@ import { createConnection } from 'node:net';
 import { createAgentCore, startCoreHost, createCoreClient } from '../lib/agent-core/index.mjs';
 import { createCoreStorage } from '../lib/agent-core/storage.mjs';
 import { createJournal } from '../lib/agent-core/journal.mjs';
+import { nativeAddress } from '../lib/agent-core/host.mjs';
 import { ProtocolError } from '../lib/agent-protocol/index.mjs';
 import create from '../commands/create.mjs';
 
@@ -57,8 +58,10 @@ test('one accepted request performs one actual file change across two viewers an
   assert.equal(events.at(-1).data.verified, false);
   const replay = core.subscribe({ sessionId: session.id, afterSequence: events.at(-1).sequence - 1 }, browser);
   assert.equal((await replay.next()).value.type, 'agent.completed'); await replay.return();
-  const privateState = await lstat(stateDir); assert.equal(privateState.mode & 0o777, 0o700);
-  const journal = await readFile(join(stateDir, 'journals', `${session.id}.ndjson`), 'utf8'); assert.ok(!journal.includes(root)); assert.ok(!journal.includes(params.request));
+  const storage = await createCoreStorage({ stateDir });
+  if (process.platform === 'win32') assert.equal(storage.windowsProtected, true);
+  else assert.equal((await lstat(stateDir)).mode & 0o777, 0o700);
+  const journal = await storage.read('journal', session.id); assert.ok(!journal.includes(root)); assert.ok(!journal.includes(params.request));
 });
 
 test('browser requires a native project grant and cannot inject actor/path/credential authority', async t => {
@@ -108,7 +111,9 @@ test('raw reasoning, secrets and model verification claims never enter journal o
   const session = await call(core, 'session.create', { projectHandle: project.id });
   await call(core, 'session.input', { sessionId: session.id, requestId: 'input_private', operation: 'game.maintain', request: 'Add dash to my ZUKU game.' });
   const done = await wait(core, session.id); assert.equal(done.result.verified, false);
-  const journal = await readFile(join(stateDir, 'journals', `${session.id}.ndjson`), 'utf8');
+  // A terminal in-memory state precedes the final durable journal append.
+  for await (const event of core.subscribe({ sessionId: session.id }, native)) if (event.type === 'agent.completed') break;
+  const journal = await (await createCoreStorage({ stateDir })).read('journal', session.id);
   for (const value of [secret, 'PRIVATE_REASONING_SENTINEL', root]) assert.ok(!journal.includes(value));
   assert.match(journal, /redacted/);
 });
@@ -147,7 +152,8 @@ test('actual native IPC shares the same session between two authenticated client
   for await (const event of second.subscribe({ sessionId: session.id })) { observed.push(event); if (event.type === 'agent.completed') break; }
   assert.equal(operations, 1); assert.equal(observed.at(-1).type, 'agent.completed');
   first.close(); const response = await second.dispatch(envelope('session.get', { sessionId: session.id })); assert.equal(response.result.state, 'completed');
-  assert.equal((await lstat(join(host.stateDir, 'agent.sock'))).mode & 0o777, 0o600);
+  if (process.platform === 'win32') assert.match(nativeAddress(host.stateDir), /^\\\\\.\\pipe\\zukujs-core-[a-f0-9]{32}$/);
+  else assert.equal((await lstat(join(host.stateDir, 'agent.sock'))).mode & 0o777, 0o600);
 });
 
 test('bounded journal drops a slow subscriber and reports expired cursors without cancelling host', async t => {
@@ -169,7 +175,7 @@ test('native IPC rejects unknown authentication and browser authority escalation
   const client = await createCoreClient({ stateDir: host.stateDir, autostart: false });
   t.after(async () => { client.close(); await host.close(); await rm(base, { recursive: true, force: true }); });
   const denied = await new Promise((resolve, reject) => {
-    const socket = createConnection(join(host.stateDir, 'agent.sock')); let data = '';
+    const socket = createConnection(nativeAddress(host.stateDir)); let data = '';
     socket.on('error', reject); socket.on('connect', () => socket.write(JSON.stringify({ type: 'authenticate', protocolVersion: 1, clientId: 'foreign_client', token: 'x'.repeat(43) }) + '\n'));
     socket.on('data', chunk => { data += chunk; if (data.includes('\n')) { socket.destroy(); resolve(JSON.parse(data.trim())); } });
   });
@@ -195,12 +201,13 @@ test('native client autostarts a real separate shared host and disconnect leaves
     await rm(base, { recursive: true, force: true });
   });
   first = await createCoreClient({ stateDir });
-  const connection = JSON.parse(await readFile(join(stateDir, 'connection.json'), 'utf8')); pid = connection.pid;
+  const storage = await createCoreStorage({ stateDir });
+  const connection = await storage.readJSON('connection'); pid = connection.pid;
   assert.notEqual(pid, process.pid); assert.equal(connection.token.length, 43);
   const hello = await first.dispatch(envelope('hello')); assert.equal(hello.result.product, 'zuku-agent-core');
   first.close(); second = await createCoreClient({ stateDir, autostart: false });
   assert.equal((await second.dispatch(envelope('hello'))).result.status, 'ready');
-  assert.equal(JSON.parse(await readFile(join(stateDir, 'connection.json'), 'utf8')).pid, pid);
+  assert.equal((await storage.readJSON('connection')).pid, pid);
 });
 
 test('actual shared scope runtime reads and patches approved game bytes with durable receipts', async t => {

@@ -10,20 +10,25 @@ import { startCoreHost, createCoreClient } from '../lib/agent-core/index.mjs';
 import { ProtocolError, createBrowserClient } from '../lib/agent-protocol/index.mjs';
 import { nativeAuthorizationUrl } from '../lib/agent-core/native-auth.mjs';
 import { createBrowserAdapter } from '../lib/browser-adapter/server.mjs';
+import { createCoreStorage } from '../lib/agent-core/storage.mjs';
+import { readProtectedStore } from '../lib/accounts/windows-protected-store.mjs';
 
 let serial = 0;
 const envelope = (method, params = {}) => ({ protocolVersion: 1, id: `auth_req_${++serial}`, method, params });
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+const windows = process.platform === 'win32';
+const storeText = file => windows ? readProtectedStore(file) : readFile(file, 'utf8');
 async function call(client, method, params = {}, actor) {
   const response = await client.dispatch(envelope(method, params), actor ? { actor } : {});
   if (response.error) throw new ProtocolError(response.error.code); return response.result;
 }
 async function fixture(t, options = {}) {
   const home = await mkdtemp(join(tmpdir(), 'zuku-core-auth-'));
-  const host = await startCoreHost({ stateDir: join(home, 'core'), home, environment: {}, ...options });
+  const providerDir = join(home, '.config', 'zukujs', 'providers');
+  const host = await startCoreHost({ stateDir: join(home, 'core'), home, environment: {}, providerContext: { stateDir: providerDir }, ...options });
   const native = await createCoreClient({ stateDir: host.stateDir, autostart: false });
   const bridge = await createCoreClient({ stateDir: host.stateDir, autostart: false });
-  const secretsPath = join(home, '.config', 'zukujs', 'providers', 'secrets.json');
+  const secretsPath = join(providerDir, windows ? 'secrets.dpapi' : 'secrets.json');
   t.after(async () => { native.close(); bridge.close(); await host.close(); await rm(home, { recursive: true, force: true }); });
   return { home, host, native, bridge, secretsPath };
 }
@@ -77,9 +82,12 @@ test('actual paired browser requests auth while only native IPC receives secret 
   assert.ok(!JSON.stringify([accepted, status]).includes(secret));
   assert.ok(!JSON.stringify(prompts).includes(secret));
   assert.ok(!await fileContents(host.stateDir).then(text => text.includes(secret)));
-  assert.equal(JSON.parse(await readFile(secretsPath, 'utf8')).providers.openai.apiKey, secret);
-  assert.equal((await lstat(secretsPath)).mode & 0o777, 0o600);
-  assert.equal((await lstat(join(home, '.config/zukujs/providers'))).mode & 0o777, 0o700);
+  assert.equal(JSON.parse(await storeText(secretsPath)).providers.openai.apiKey, secret);
+  if (windows) assert.ok(!(await readFile(secretsPath)).includes(Buffer.from(secret)));
+  else {
+    assert.equal((await lstat(secretsPath)).mode & 0o777, 0o600);
+    assert.equal((await lstat(join(home, '.config/zukujs/providers'))).mode & 0o777, 0o700);
+  }
   await browser.call('auth.logout', { providerId: 'openai' });
   for (let i = 0; i < 100; i++) { status = await browser.call('auth.list'); if (status.auth.find(item => item.provider === 'openai').status === 'not-configured') break; await pause(5); }
   assert.equal(status.auth.find(item => item.provider === 'openai').status, 'not-configured');
@@ -93,7 +101,7 @@ test('native prompter ownership rejects another client and secret replies from a
   await assert.rejects(bridge.attachNativePrompter(() => ({ value: 'attacker' })), { code: 'NATIVE_PROMPTER_BUSY' });
   const accepted = await call(bridge, 'auth.request', { providerId: 'openai' });
   const prompt = await seenPrompt;
-  const record = JSON.parse(await readFile(join(host.stateDir, 'connection.json'), 'utf8'));
+  const record = await (await createCoreStorage({ stateDir: host.stateDir })).readJSON('connection');
   const socket = createConnection(record.address); t.after(() => socket.destroy());
   const incoming = [], waiting = [];
   let buffer = '';
@@ -157,7 +165,7 @@ test('actual experimental Codex OAuth opens its own callback flow and keeps auth
   const url = new URL(authorization.url);
   assert.equal(url.origin, 'https://auth.openai.com'); assert.equal(url.searchParams.get('code_challenge_method'), 'S256');
   assert.equal(new URL(url.searchParams.get('redirect_uri')).hostname, '127.0.0.1');
-  const own = JSON.parse(await readFile(join(home, '.config/zukujs/codex-oauth.json'), 'utf8'));
+  const own = JSON.parse(await storeText(join(home, '.config/zukujs', windows ? 'codex-oauth.dpapi' : 'codex-oauth.json')));
   assert.equal(own.experimentalAccepted, true); assert.deepEqual(own.accounts, []);
   assert.ok(!JSON.stringify([accepted, state]).includes(url.searchParams.get('state')));
   assert.ok(!await fileContents(host.stateDir).then(text => text.includes(url.href)));
