@@ -67,7 +67,8 @@ test('Windows ACLs granting another SID access are refused', { skip: !windows },
   const f = await fixture(t); await writeProtectedStore(f.file, '{"fixture":true}');
   await new Promise((resolve, reject) => {
     const executable = path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
-    const child = spawn(executable, ['-NoProfile', '-NonInteractive', '-Command', WEAKEN_ACL], { windowsHide: true, stdio: ['pipe', 'ignore', 'ignore'] });
+    const environment = { ...process.env, PSModulePath: path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'Modules') };
+    const child = spawn(executable, ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(WEAKEN_ACL, 'utf16le').toString('base64')], { env: environment, windowsHide: true, stdio: ['pipe', 'ignore', 'ignore'] });
     child.on('error', reject); child.on('close', code => code === 0 ? resolve() : reject(new Error('Fixture ACL setup failed'))); child.stdin.end(f.file);
   });
   await assert.rejects(readProtectedStore(f.file), unsafe);
@@ -104,7 +105,7 @@ test('Windows default ZUKU login store is read from isolated LOCALAPPDATA withou
     console.log('isolated-default-store PASS');
   `;
   await new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ['--input-type=module', '--eval', program], { cwd: new URL('../', import.meta.url), env: { ...process.env, LOCALAPPDATA: appData }, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, ['--input-type=module', '--eval', program], { cwd: new URL('../', import.meta.url), env: { ...process.env, LOCALAPPDATA: appData, PSModulePath: 'C:\\unused\\zuku-untrusted-fixture-modules' }, stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
     const timer = setTimeout(() => { child.kill(); reject(new Error('Fixture child timed out')); }, 60000);
     child.stdout.on('data', data => { output += data.toString(); });
