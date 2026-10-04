@@ -34,6 +34,7 @@ concurrency:
 
 env:
   ZUKU_MANAGED_NODE: 22.22.3
+  ZUKU_REVIEWED_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
 
 jobs:
   native:
@@ -73,6 +74,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          # Asset provenance binds the reviewed source commit, not a transient PR merge.
+          ref: ${{ env.ZUKU_REVIEWED_COMMIT }}
 
       - uses: actions/setup-node@v4
         with:
@@ -80,7 +83,7 @@ jobs:
           architecture: ${{ matrix.arch }}
 
       - name: Require the exact installer-managed Node release and native architecture
-        run: node --input-type=module -e "import {platformDescriptor,assertNativeHost} from './scripts/platform-build/matrix.mjs';assertNativeHost(platformDescriptor(process.argv[1]));if(process.version!=='v'+process.env.ZUKU_MANAGED_NODE)process.exit(1);console.log(JSON.stringify({platform:process.argv[1],node:process.version,arch:process.arch,native:true}))" "${{ matrix.platform }}"
+        run: node --input-type=module -e "import {execFileSync} from 'node:child_process';import {platformDescriptor,assertNativeHost} from './scripts/platform-build/matrix.mjs';assertNativeHost(platformDescriptor(process.argv[1]));if(process.version!=='v'+process.env.ZUKU_MANAGED_NODE||execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim()!==process.env.ZUKU_REVIEWED_COMMIT)process.exit(1);console.log(JSON.stringify({platform:process.argv[1],node:process.version,arch:process.arch,commit:process.env.ZUKU_REVIEWED_COMMIT,native:true}))" "${{ matrix.platform }}"
 
       - name: Stage the verified Node in a private canonical CI fixture directory
         if: runner.os != 'Windows'

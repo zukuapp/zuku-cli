@@ -10,7 +10,7 @@ const FIRST = 'fixture-first-key-123456789';
 const SECOND = 'fixture-second-key-123456789';
 const STAGE_SCHEMA = { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false };
 async function fixture(t) { const dir = await mkdtemp(join(tmpdir(), 'zuku-auth-boundary-')); t.after(() => rm(dir, { recursive: true, force: true })); return dir; }
-const options = dir => ({ home: dir, environment: {}, experimental: undefined, legacyAuth: {} });
+const options = dir => ({ home: dir, stateDir: join(dir, '.config/zukujs/providers'), environment: {}, experimental: undefined, legacyAuth: {} });
 function adapters(hooks = {}) {
   const calls = [];
   return { calls, listBuiltinDescriptors: () => [], createAdapter(descriptor, context) {
