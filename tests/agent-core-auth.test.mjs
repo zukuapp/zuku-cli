@@ -119,20 +119,32 @@ test('native prompter ownership rejects another client and secret replies from a
   await assert.rejects(call(bridge, 'auth.request', { providerId: 'openai' }), { code: 'NATIVE_PERMISSION_REQUIRED' });
 });
 
-test('native prompt cancellation, expiry and disconnect never write an entered credential', async t => {
+test('native prompt cancellation never writes an entered credential', async t => {
+  // Cancellation and disconnect must not race the separate short expiry fixture on slow IPC.
+  const { native, bridge, secretsPath } = await fixture(t);
+  const detach = await native.attachNativePrompter(() => ({ cancelled: true }));
+  const accepted = await call(bridge, 'auth.request', { providerId: 'openai' });
+  const { job } = await waitAuth(bridge, accepted.authRequestId);
+  assert.equal(job.status, 'cancelled'); assert.equal(job.code, 'COMMAND_CANCELLED');
+  await assert.rejects(readFile(secretsPath), { code: 'ENOENT' }); await detach();
+});
+
+test('native prompt expiry never writes an entered credential', async t => {
   const { native, bridge, secretsPath } = await fixture(t, { nativePromptTimeoutMs: 35 });
-  let detach = await native.attachNativePrompter(() => ({ cancelled: true }));
-  let accepted = await call(bridge, 'auth.request', { providerId: 'openai' });
-  assert.equal((await waitAuth(bridge, accepted.authRequestId)).job.status, 'cancelled'); await detach();
-  detach = await native.attachNativePrompter(() => new Promise(() => {}));
-  accepted = await call(bridge, 'auth.request', { providerId: 'openai' });
+  const detach = await native.attachNativePrompter(() => new Promise(() => {}));
+  const accepted = await call(bridge, 'auth.request', { providerId: 'openai' });
   const timedOut = (await waitAuth(bridge, accepted.authRequestId)).job;
-  assert.ok(['failed', 'cancelled'].includes(timedOut.status)); assert.ok(['AUTH_PROMPT_TIMEOUT', 'COMMAND_CANCELLED'].includes(timedOut.code));
-  await detach();
+  assert.equal(timedOut.status, 'failed'); assert.equal(timedOut.code, 'AUTH_PROMPT_TIMEOUT');
+  await assert.rejects(readFile(secretsPath), { code: 'ENOENT' }); await detach();
+});
+
+test('native prompt disconnect never writes an entered credential', async t => {
+  const { native, bridge, secretsPath } = await fixture(t);
   let observed; const seen = new Promise(resolve => { observed = resolve; });
   await native.attachNativePrompter(request => { observed(request); return new Promise(() => {}); });
-  accepted = await call(bridge, 'auth.request', { providerId: 'openai' }); await seen; native.close();
-  assert.equal((await waitAuth(bridge, accepted.authRequestId)).job.status, 'cancelled');
+  const accepted = await call(bridge, 'auth.request', { providerId: 'openai' }); await seen; native.close();
+  const { job } = await waitAuth(bridge, accepted.authRequestId);
+  assert.equal(job.status, 'cancelled'); assert.equal(job.code, 'COMMAND_CANCELLED');
   await assert.rejects(readFile(secretsPath), { code: 'ENOENT' });
 });
 
