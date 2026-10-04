@@ -237,13 +237,29 @@ test('Bedrock catalog: real control-plane SDK lists foundation models and infere
 test('Bedrock credential kinds and SDK availability fail before any request', { skip: AWS_SKIP }, async t => {
   withAwsEnv(t);
   const fx = await h2fixture(t, async (req, res) => { res.writeHead(500); res.end(); });
-  await assert.rejects(collect(bedrock(fx, { getCredentials: async () => ({ kind: 'api-key', apiKey: 'x'.repeat(20) }) }).stream(ask)), { code: 'ADAPTER_CREDENTIALS_INVALID' });
+  await assert.rejects(collect(bedrock(fx, { getCredentials: async () => ({ kind: 'bearer', accessToken: 'x'.repeat(20) }) }).stream(ask)), { code: 'ADAPTER_CREDENTIALS_INVALID' });
   await assert.rejects(collect(bedrock(fx, { getCredentials: async () => ({ kind: 'none' }) }).stream(ask)), { code: 'ADAPTER_CREDENTIALS_MISSING' });
   await assert.rejects(collect(bedrock(fx, { getCredentials: async () => ({ kind: 'cloud-chain', configuration: { region: 'not a region' } }) }).stream(ask)), { code: 'ADAPTER_CREDENTIALS_INVALID' });
   await assert.rejects(collect(bedrock(fx, { getCredentials: async () => ({ kind: 'cloud-chain', configuration: { secretAccessKey: 'x' } }) }).stream(ask)), { code: 'ADAPTER_INVALID_DESCRIPTOR' });
   await assert.rejects(collect(bedrock(fx, { importModule: async () => { throw new Error('missing'); } }).stream(ask)), { code: 'ADAPTER_SDK_UNAVAILABLE' });
   assert.equal(fx.requests.length, 0);
   assert.throws(() => createAdapter({ ...builtin('amazon-bedrock'), baseUrl: 'https://evil.example' }, chain()), { code: 'ADAPTER_ENDPOINT_REJECTED' });
+});
+
+test('Bedrock API-key auth uses real SDK bearer signer and preserves scoped custom headers/output ceiling', { skip: AWS_SKIP }, async t => {
+  const key = 'fixture-bedrock-bearer-key-123456';
+  const fx = await h2fixture(t, async (req, res) => {
+    res.writeHead(200, { 'content-type': 'application/vnd.amazon.eventstream' });
+    res.end(Buffer.from(RECORDED_BEDROCK_TEXT, 'base64'));
+  });
+  const descriptor = { ...builtin('amazon-bedrock'), options: { region: 'us-west-2', profile: 'fixture', maxOutputTokens: 12 } };
+  const client = createAdapter(descriptor, { importModule: awsLoad, testOrigin: fx.origin, getCredentials: async () => ({ kind: 'api-key', apiKey: key, headers: { 'X-Fixture': 'scoped' } }) });
+  const events = await collect(client.stream({ ...ask, tools: undefined, maxOutputTokens: 100 }));
+  assert.equal(events.at(-1).reason, 'stop');
+  assert.equal(fx.requests.length, 1);
+  assert.equal(fx.requests[0].headers.authorization, `Bearer ${key}`);
+  assert.equal(fx.requests[0].headers['x-fixture'], 'scoped');
+  assert.equal(JSON.parse(fx.requests[0].body.toString()).inferenceConfig.maxTokens, 12);
 });
 
 test('Bedrock request mapping without the SDK: Converse input shape', async () => {

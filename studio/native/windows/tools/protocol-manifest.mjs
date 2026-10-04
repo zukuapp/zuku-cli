@@ -46,7 +46,7 @@ export async function buildManifest() {
     rendererMethods: methods,
     nativePrivate: [...NATIVE_PRIVATE].sort(),
     events,
-    publicKeys: strings(extract(schemaText, /const PUBLIC_KEYS = new Set\(\[([^\]]+)\]\)/, 'PUBLIC_KEYS')).sort(),
+    publicKeys: [...schema.PUBLIC_RESULT_KEYS].sort(),
     secretKeyPattern: extract(schemaText, /^const SECRET_KEY = \/(.+)\/i;$/m, 'SECRET_KEY'),
     secretTextPattern: extract(schemaText, /^const SECRET_TEXT = \/(.+)\/;$/m, 'SECRET_TEXT'),
     credentialAssignmentPattern: extract(schemaText, /hasSecret\(text\) \|\| \/(.+?)\/i\.test\(text\)/, 'credential assignment pattern'),

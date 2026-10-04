@@ -95,7 +95,7 @@ test('real zuku and zukujs processes attach the same Core and see identical prov
   assert.equal(p.stdout, q.stdout);
 });
 
-test('--option is a finite vocabulary; Core-inexpressible or unpersisted options fail before any write', async t => {
+test('--option stays finite and adapter-specific; malformed or unsupported fields fail before any write', async t => {
   const { cli, home } = await fixture(t);
   const ok = await cli(['provider', 'configure', 'amazon-bedrock', '--option', 'region=us-east-1', '--json']);
   assert.equal(ok.code, 0, ok.err);
@@ -103,15 +103,12 @@ test('--option is a finite vocabulary; Core-inexpressible or unpersisted options
   assert.equal(JSON.parse(await readFile(configPath, 'utf8')).providers['amazon-bedrock'].options.region, 'us-east-1');
   const snapshot = await readFile(configPath, 'utf8');
   for (const [args, code] of [
-    [['google-vertex', '--option', 'project=my-project-01'], 'CORE_PROTOCOL_GAP'],
-    [['google-vertex', '--project', 'my-project-01'], 'CORE_PROTOCOL_GAP'],
-    [['openai', '--option', 'wire=chat'], 'PROVIDER_OPTION_UNSUPPORTED'],
-    [['openai', '--option', 'allowLoopbackHttp=true'], 'PROVIDER_OPTION_UNSUPPORTED'],
+    [['openai', '--option', 'wire=chat'], 'PROVIDER_CONFIG_INVALID'],
+    [['openai', '--option', 'allowLoopbackHttp=true'], 'PROVIDER_CONFIG_INVALID'],
     [['openai', '--option', 'bogus=1'], 'INVALID_INPUT'],
     [['amazon-bedrock', '--option', 'region=https://evil.example'], 'INVALID_INPUT'],
     [['amazon-bedrock', '--option', 'region=us-east-1', '--option', 'region=us-west-2'], 'INVALID_INPUT'],
     [['openai', '--option', `model=${'sk-proj-' + 'a'.repeat(30)}`], 'AUTH_SECRET_ARGUMENT'],
-    [['openai', '--header-env', 'X-Org=ORG_ID'], 'CORE_PROTOCOL_GAP'],
   ]) {
     const result = await cli(['provider', 'configure', ...args, '--json']);
     assert.equal(result.error?.code, code, `${args.join(' ')} -> ${result.err}`);
@@ -130,7 +127,7 @@ test('explicitly injected provider context keeps the historical direct runtime a
   assert.deepEqual(vertex.options, { project: 'my-project-01', location: 'us-central1' });
   const catalog = await provider(['configure', 'lab', '--type', 'openai-chat', '--option', 'catalog=openai'], ctx);
   assert.equal(catalog.options.catalog, 'openai');
-  await assert.rejects(provider(['configure', 'openai', '--option', 'profile=default'], ctx), { code: 'PROVIDER_OPTION_UNSUPPORTED' });
+  await assert.rejects(provider(['configure', 'openai', '--option', 'profile=default'], ctx), { code: 'PROVIDER_CONFIG_INVALID' });
 });
 
 test('auth login uses the native prompter: stdin secret is stored once and never appears in output or Core state', async t => {
@@ -154,7 +151,7 @@ test('auth login uses the native prompter: stdin secret is stored once and never
 });
 
 test('hidden-entry Ctrl-C cancels the Core auth job before persistence; Codex needs explicit opt-in', async t => {
-  const { cli, home, direct } = await fixture(t);
+  const { cli, home, direct } = await fixture(t, { providerContext: { fetch: async () => Response.json({ data: [] }) } });
   const stdin = new PassThrough(); stdin.isTTY = true; stdin.setRawMode = () => stdin;
   const stderr = new PassThrough(); stderr.isTTY = true; stderr.text = '';
   stderr.on('data', chunk => { stderr.text += chunk; if (stderr.text.includes('표시되지 않습니다') && !stderr.sent) { stderr.sent = true; stdin.write('partial-secret\u0003'); } });
@@ -166,8 +163,9 @@ test('hidden-entry Ctrl-C cancels the Core auth job before persistence; Codex ne
   assert.ok(!stderr.text.includes('partial-secret'));
   const codex = await cli(['auth', 'login', '--provider', 'codex', '--json']);
   assert.equal(codex.error.code, 'AUTH_EXPERIMENTAL_OPT_IN');
-  assert.equal((await cli(['auth', 'login', '--provider', 'openai', '--api-key-stdin', '--verify', '--json'], { stdin: Readable.from([`${SECRET}\n`]) })).error.code, 'CORE_PROTOCOL_GAP');
-  await assert.rejects(readFile(join(home, '.config/zukujs/providers/secrets.json')), { code: 'ENOENT' });
+  const verified = await cli(['auth', 'login', '--provider', 'openai', '--api-key-stdin', '--verify', '--json'], { stdin: Readable.from([`${SECRET}\n`]) });
+  assert.equal(verified.code, 0, verified.err); assert.equal(verified.data.verified, 'valid');
+  assert.ok(!verified.out.includes(SECRET) && !verified.err.includes(SECRET));
 });
 
 test('agent runs through grant/session/input and follows the Core journal; no fallback, explicit opt-in', async t => {

@@ -5,7 +5,7 @@ import { isInteractive, askChoice, askLine, askSecret, readSecretFromStdin } fro
 import { authMethodLabel, colorEnabled } from '../lib/provider-system/render.mjs';
 import { NATIVE_PROVIDER_ID } from '../lib/provider-system/catalog.mjs';
 import { HEADER_NAME } from '../lib/provider-system/endpoint.mjs';
-import { providerRuntimeFor, createNativePrompter, requestAuth, methodKind, CoreCliError } from '../lib/cli-core-runtime.mjs';
+import { providerRuntimeFor, createNativePrompter, requestAuth, methodKind } from '../lib/cli-core-runtime.mjs';
 
 const LOGIN_FLAGS = { '--provider': 'string', '--api-key-stdin': 'boolean', '--api-key-env': 'string', '--header': 'list', '--verify': 'boolean', '--experimental': 'boolean', '--no-browser': 'boolean' };
 
@@ -79,10 +79,9 @@ async function coreLogin(runtime, options, ctx) {
     return { provider: id, method: delegated, status: 'delegated', authStatus: (await status())?.status ?? 'unknown' };
   }
   if (options.noBrowser || options.experimental) throw invalidInput();
-  // Header secrets and post-login verification have no Agent Core protocol carrier yet.
-  if (headerNames.length || options.verify) throw new CoreCliError('CORE_PROTOCOL_GAP');
+  if (headerNames.length && (!interactive || options.apiKeyStdin || options.apiKeyEnv)) throw new ProviderError('AUTH_INPUT_REQUIRED');
   if (options.apiKeyEnv !== undefined) {
-    if (options.apiKeyStdin) throw invalidInput();
+    if (options.apiKeyStdin || options.verify) throw invalidInput();
     await runtime.configureProvider(id, { apiKeyEnv: options.apiKeyEnv });
     const method = methods.find(item => methodKind(item) === 'environment') ?? methods.find(item => methodKind(item) === 'secret');
     if (!method) throw new ProviderError('AUTH_METHOD_UNSUPPORTED');
@@ -91,22 +90,23 @@ async function coreLogin(runtime, options, ctx) {
   const keyMethod = methods.find(item => methodKind(item) === 'secret');
   let secret;
   if (options.apiKeyStdin) secret = await readSecretFromStdin(pctx);
-  else if (keyMethod && !interactive) throw new ProviderError('AUTH_INPUT_REQUIRED');
+  else if (keyMethod && !headerNames.length && !interactive) throw new ProviderError('AUTH_INPUT_REQUIRED');
   if (!keyMethod && secret !== undefined) throw new ProviderError('AUTH_METHOD_UNSUPPORTED');
   const method = keyMethod ?? methods.find(item => methodKind(item) === 'passive') ?? methods[0];
   if (!method) throw new ProviderError('AUTH_METHOD_UNSUPPORTED');
   const prompter = createNativePrompter({ stderr: pctx.stderr, environment,
     secret: async (prompt, { signal }) => {
       if (secret !== undefined) { const value = secret; secret = undefined; return value; }
-      return askSecret({ ...pctx, signal: signal ?? pctx.signal }, `${keyMethod.name} (입력 내용은 표시되지 않습니다): `);
+      return askSecret({ ...pctx, signal: signal ?? pctx.signal }, `${prompt.headerName ?? keyMethod?.name ?? 'Secret'} (입력 내용은 표시되지 않습니다): `);
     },
     decide: async () => /^y/i.test(await askLine(pctx, '진행할까요? [y/N] ', { validate: value => /^(y|n|yes|no)$/i.test(value), fallback: 'n' })),
   });
   // A user-registered custom endpoint is (exp!) by metadata; registering it here is the opt-in.
-  try { await requestAuth(core, { providerId: id, methodId: method.id, experimental: method.experimental === true && row.custom === true, prompter, signal: ctx.signal }); }
+  let job;
+  try { job = await requestAuth(core, { providerId: id, methodId: method.id, experimental: method.experimental === true && row.custom === true, ...(headerNames.length ? { headerNames } : {}), verify: options.verify === true, prompter, signal: ctx.signal }); }
   finally { secret = undefined; }
-  if (keyMethod) return { provider: id, method: keyMethod, status: 'configured', storage: 'secure-store' };
-  return { provider: id, method, status: (await status())?.status ?? 'unknown' };
+  if (keyMethod) return { provider: id, method: keyMethod, status: 'configured', storage: 'secure-store', ...(job.verified ? { verified: job.verified } : {}) };
+  return { provider: id, method, status: (await status())?.status ?? 'unknown', ...(job.verified ? { verified: job.verified } : {}) };
 }
 
 /** zuku|zukujs auth [list|login|logout] [--provider <id>] — statuses only, never tokens. */
