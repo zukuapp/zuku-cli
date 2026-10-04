@@ -127,9 +127,9 @@ jobs:
           $output | Out-Host
           if ($status -ne 0) { throw 'Windows protected-store tests failed.' }
           $ran = $output | Select-String -Pattern '^ok \d+ - Windows DPAPI round-trip'
-          if (-not $ran -or $ran.Line -match '# SKIP') { throw 'The DPAPI round-trip test did not actually run.' }
+          if (-not $ran -or $ran.Line -cmatch '# SKIP') { throw 'The DPAPI round-trip test did not actually run.' }
           # Only the non-Windows fallback test may skip here; every Windows test must execute.
-          $skipped = $output | Select-String -Pattern '# SKIP' | Where-Object { $_.Line -notmatch ' - Windows protected store fails safely on unsupported platforms' }
+          $skipped = $output | Select-String -Pattern '# SKIP' -CaseSensitive | Where-Object { $_.Line -notmatch ' - Windows protected store fails safely on unsupported platforms' }
           if ($skipped) { $skipped | Out-Host; throw 'A Windows protected-store test was skipped instead of run.' }
 
       - name: Linux GTK/WebKit build dependencies
