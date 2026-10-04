@@ -362,7 +362,7 @@ sealed class MainWindow : Window
             core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
             core.WebResourceRequested += (_, e) =>
             {
-                if (!Allowed(e.Request.Uri)) e.Response = environment.CreateWebResourceResponse(null, 403, "Forbidden", "Cache-Control: no-store");
+                if (!Allowed(e.Request.Uri)) e.Response = core.Environment.CreateWebResourceResponse(null, 403, "Forbidden", "Cache-Control: no-store");
             };
             await core.AddScriptToExecuteOnDocumentCreatedAsync(PreviewGuard);
             core.ProcessFailed += (_, _) => HidePreview();
