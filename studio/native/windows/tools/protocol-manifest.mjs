@@ -10,7 +10,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 export const ROOT = join(here, '..', '..', '..', '..');
 export const MANIFEST = join(here, '..', 'src', 'ZukuStudio.Core', 'protocol-manifest.json');
 // Never callable from the renderer, whatever bridge.js lists.
-const NATIVE_PRIVATE = ['project.grant', 'preview.read', 'studio.open', 'native.projectChosen', 'native.resolvePreview', 'native.pairingDecision', 'native.authResponse'];
+const NATIVE_PRIVATE = ['browser.grant', 'project.grant', 'preview.read', 'studio.open', 'native.projectChosen', 'native.resolvePreview', 'native.pairingDecision', 'native.authResponse'];
 
 function extract(source, pattern, label) {
   const match = source.match(pattern);
@@ -32,7 +32,7 @@ export async function buildManifest() {
   const methods = {};
   for (const method of [...allowed].sort()) {
     const spec = schema.METHODS[method];
-    methods[method] = { required: Object.keys(spec.required).sort(), optional: Object.keys(spec.optional).sort() };
+    methods[method] = { required: Object.keys(spec.required).sort(), optional: Object.keys(spec.optional).filter(key => !spec.nativeOptional?.includes(key)).sort() };
   }
   const events = {};
   for (const type of Object.keys(schema.EVENTS).sort()) {

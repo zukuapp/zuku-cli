@@ -192,7 +192,7 @@ test('agent runs through grant/session/input and follows the Core journal; no fa
   assert.equal(sessions.length, 1); assert.equal(sessions[0].state, 'completed');
   const scope = await cli(['chat', 'build an ecommerce checkout site', '--experimental', '--json'], { cwd: game });
   assert.equal(scope.error.code, 'AGENT_REQUEST_OUT_OF_SCOPE'); assert.equal(calls.length, 2);
-  assert.equal((await cli(['agent', 'make a game', '--browser', '/usr/bin/chromium', '--json'], { cwd: game })).error.code, 'CORE_PROTOCOL_GAP');
+  assert.equal((await cli(['agent', 'make a game', '--browser', '/usr/bin/chromium', '--json'], { cwd: game })).error.code, 'BROWSER_EXECUTABLE_UNSAFE');
   // init grants an empty folder for game.init and forwards the game name to Core.
   const fresh = join(dirname(game), 'fresh'); await mkdir(fresh);
   const created = await cli(['init', 'create a jumping game', '--name', 'jumper', '--experimental', '--json'], { cwd: fresh });

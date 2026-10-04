@@ -200,6 +200,7 @@
     }
   },
   "nativePrivate": [
+    "browser.grant",
     "native.authResponse",
     "native.pairingDecision",
     "native.projectChosen",
@@ -446,6 +447,7 @@
     "authenticated",
     "available",
     "baseUrl",
+    "browserHandle",
     "builtin",
     "bytes",
     "cached",
