@@ -125,7 +125,7 @@ test('real CLI processes, native secret sideband and killed/restarted Core prese
   assert.equal(posts[1].url, '/openai/v1/chat/completions?api-version=preview'); assert.equal(posts[1].body.model, 'game-deployment'); assert.equal(posts[1].headers['api-key'], fixtureKey);
   assert.equal(posts[2].url, `/v1/${'a'.repeat(32)}/zuku-fixture/compat/chat/completions`); assert.equal(posts[2].headers['cf-aig-authorization'], `Bearer ${fixtureKey}`);
   assert.equal(posts[3].url, '/v1/projects/my-project-01/locations/us-central1/publishers/google/models/game-model:streamGenerateContent?alt=sse'); assert.equal(posts[3].headers['x-goog-user-project'], 'my-project-01'); assert.equal(posts[3].headers['x-org'], 'fixture-org');
-  assert.deepEqual(posts.slice(4).map(post => post.url), ['/v1/openai/chat/completions', '/api/v1/chat/completions', '/chat/completions']);
+  assert.deepEqual(posts.slice(4).map(post => post.url), ['/v1/openai/chat/completions', '/api/v1/chat/completions', '/v1/sonar']);
   const config = await readFile(join(home, '.config/zukujs/providers/config.json'), 'utf8');
   assert.ok(!config.includes(fixtureKey) && !config.includes(fixtureHeader));
   const secretDir = join(home, '.config/zukujs/providers');
