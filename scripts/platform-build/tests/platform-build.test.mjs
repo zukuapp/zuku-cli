@@ -37,9 +37,9 @@ function git(root, ...args) {
   return result.stdout;
 }
 // Synthetic checkout: the real package identity shape, the shared payload list and a fake native build output.
-async function fixtureRepository(t, platformId) {
+async function fixtureRepository(t, platformId, packageName = '@zuku/cli') {
   const root = await temp(t), descriptor = platformDescriptor(platformId);
-  await put(root, 'package.json', JSON.stringify({ name: '@zukujs/cli', version: '9.8.7', bin: { zuku: './index.mjs', zukujs: './index.mjs' } }));
+  await put(root, 'package.json', JSON.stringify({ name: packageName, version: '9.8.7', bin: { zuku: './index.mjs', zukujs: './index.mjs' } }));
   for (const rel of SHARED_PAYLOAD) await put(root, rel, `synthetic ${rel}\n`);
   await put(root, 'lib/studio-host.mjs', '// synthetic host placeholder\n');
   await put(root, `${descriptor.nativeDir}/source.c`, 'int main(void){return 0;}\n');
@@ -139,7 +139,7 @@ test('both Windows installer assets explicitly bundle .NET while preserving mana
     assert.equal(step.args[step.args.indexOf('-r') + 1], `win-${arch}`);
     assert.equal(step.args.at(-1), `studio/native/windows/build/win-${arch}`);
     assert.equal(descriptor.layout.managedNode, 'runtime/node.exe');
-    assert.equal(descriptor.layout.cliRoot, 'npm/node_modules/@zukujs/cli');
+    assert.equal(descriptor.layout.cliRoot, 'npm/node_modules/@zuku/cli');
     assert.deepEqual(defaultArtifacts(descriptor), [`studio/native/windows/build/win-${arch}`]);
     assert.ok(!step.args.includes('false'));
   }
@@ -307,6 +307,20 @@ test('Windows desktop project discovery accepts exactly one WinExe project under
   assert.equal(await windowsProject(root, descriptor), 'studio/native/windows/src/ZukuStudio/ZukuStudio.csproj');
   await put(root, 'studio/native/windows/src/Other/Other.csproj', '<Project><PropertyGroup><OutputType>WinExe</OutputType></PropertyGroup></Project>');
   await assert.rejects(windowsProject(root, descriptor), code('PROJECT_MISSING'));
+});
+
+test('legacy package assets keep their exact identity, layout and shared payload contract', { skip: !hasGit && 'git is required' }, async t => {
+  for (const platformId of ['linux-x64', 'darwin-arm64', 'win-x64']) {
+    const { root, descriptor } = await fixtureRepository(t, platformId, '@zukujs/cli');
+    const files = await collectArtifacts(root, defaultArtifacts(descriptor), { base: descriptor.nativeDir, executable: descriptor.defaultExecutable });
+    const asset = await createAsset({ rootReal: root, platform: platformId, files, executable: descriptor.defaultExecutable, requireClean: true });
+    assert.equal(asset.manifest.cli.name, '@zukujs/cli');
+    assert.equal(asset.manifest.launcher.host, `npm/${descriptor.os === 'win32' ? '' : 'lib/'}node_modules/@zukujs/cli/lib/studio-host.mjs`);
+    await verifyAsset(asset.record, asset.archive, { cliRoot: root });
+    const metadata = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'));
+    await put(root, 'package.json', JSON.stringify({ ...metadata, name: '@zuku/cli' }));
+    await assert.rejects(verifySharedPayload(root, asset.manifest), code('VERIFY_FAILED'), 'canonical and legacy identities cannot be substituted across assets');
+  }
 });
 
 test('placement maps only declared outputs to install-relative paths', () => {

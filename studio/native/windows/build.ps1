@@ -26,7 +26,7 @@ $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
 $repo = [IO.Path]::GetFullPath((Join-Path $here '..\..\..'))
 $package = Get-Content -LiteralPath (Join-Path $repo 'package.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-if ($package.name -ne '@zukujs/cli') { throw 'Unexpected repository: package.json is not @zukujs/cli.' }
+if ($package.name -notin @('@zuku/cli', '@zukujs/cli')) { throw 'Unexpected repository: package.json is not the CLI payload.' }
 $version = [string]$package.version
 
 if (-not $Node) { $Node = (Get-Command node.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source }

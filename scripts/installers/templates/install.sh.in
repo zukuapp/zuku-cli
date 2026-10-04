@@ -4,6 +4,7 @@ set -Eeuo pipefail
 umask 077
 
 CLI_VERSION=@@CLI_VERSION_SH@@
+CLI_NAME=@@CLI_NAME_SH@@
 PACKAGE_URL=@@PACKAGE_URL_SH@@
 PACKAGE_SHA256=@@PACKAGE_SHA256_SH@@
 NODE_VERSION=@@NODE_VERSION_SH@@
@@ -206,15 +207,15 @@ zuku_log 'Installing into the user directory...'
 : > "$zuku_work/user-npmrc"
 : > "$zuku_work/global-npmrc"
 NODE_OPTIONS='' PATH="$(dirname -- "$zuku_node"):$PATH" "$zuku_npm" install --offline --ignore-scripts --no-audit --no-fund --update-notifier=false --global --prefix "$zuku_new/npm" --cache "$zuku_work/npm-cache" --userconfig "$zuku_work/user-npmrc" --globalconfig "$zuku_work/global-npmrc" "$zuku_work/cli.tgz" >&2
-zuku_entry="$zuku_new/npm/lib/node_modules/@zukujs/cli/index.mjs"
-NODE_OPTIONS='' "$zuku_node" -e 'const f=require("node:fs");const p=JSON.parse(f.readFileSync(process.argv[1],"utf8"));if(p.name!=="@zukujs/cli"||p.version!==process.argv[2]||p.bin?.zuku!=="./index.mjs"||p.bin?.zukujs!=="./index.mjs")process.exit(1)' "$zuku_new/npm/lib/node_modules/@zukujs/cli/package.json" "$CLI_VERSION" || zuku_fail 'Installed CLI identity did not match the verified release.'
+zuku_entry="$zuku_new/npm/lib/node_modules/$CLI_NAME/index.mjs"
+NODE_OPTIONS='' "$zuku_node" -e 'const f=require("node:fs");const p=JSON.parse(f.readFileSync(process.argv[1],"utf8"));if(p.name!==process.argv[3]||p.version!==process.argv[2]||p.bin?.zuku!=="./index.mjs"||p.bin?.zukujs!=="./index.mjs")process.exit(1)' "$zuku_new/npm/lib/node_modules/$CLI_NAME/package.json" "$CLI_VERSION" "$CLI_NAME" || zuku_fail 'Installed CLI identity did not match the verified release.'
 NODE_OPTIONS='' "$zuku_node" "$zuku_entry" --help >/dev/null
 if [[ $zuku_runtime -eq 1 ]]; then zuku_final_node="$zuku_final_dir/runtime/bin/node"; else zuku_final_node=$zuku_node; fi
 NODE_OPTIONS='' "$zuku_node" -e 'const f=require("node:fs");f.writeFileSync(process.argv[1],JSON.stringify({schema:"zukujs-user-install/1",version:process.argv[2],sha256:process.argv[3],node:process.argv[4]})+"\n",{mode:0o600})' "$zuku_new/install.json" "$CLI_VERSION" "$PACKAGE_SHA256" "$zuku_final_node"
 if [[ $zuku_studio_enabled -eq 1 ]]; then
   zuku_log 'Downloading and verifying the fixed native Studio asset...'
   NODE_OPTIONS='' "$zuku_node" "$zuku_work/native-helper.mjs" download "$zuku_work/contract.json" "$zuku_platform" "$zuku_work/studio.archive"
-  NODE_OPTIONS='' "$zuku_node" "$zuku_work/native-helper.mjs" install "$zuku_work/contract.json" "$zuku_platform" "$zuku_work/studio.archive" "$zuku_new/npm/lib/node_modules/@zukujs/cli" "$zuku_container" "$zuku_new"
+  NODE_OPTIONS='' "$zuku_node" "$zuku_work/native-helper.mjs" install "$zuku_work/contract.json" "$zuku_platform" "$zuku_work/studio.archive" "$zuku_new/npm/lib/node_modules/$CLI_NAME" "$zuku_container" "$zuku_new"
 fi
 if [[ -e "$zuku_release" || -L "$zuku_release" ]]; then
   [[ -d "$zuku_release" && ! -L "$zuku_release" && -O "$zuku_release" ]] || zuku_fail 'The release directory belongs to another installation.'
@@ -239,7 +240,7 @@ for zuku_index in 0 1; do
   zuku_temp_launchers[$zuku_index]=$(mktemp "$zuku_bin/.zukujs-XXXXXXXX")
   {
     printf '#!/usr/bin/env bash\n# ZukuJS user installer launcher\n# prefix: %s\n' "$zuku_prefix"
-    printf 'exec %q %q "$@"\n' "$zuku_final_node" "$zuku_final_dir/npm/lib/node_modules/@zukujs/cli/index.mjs"
+    printf 'exec %q %q "$@"\n' "$zuku_final_node" "$zuku_final_dir/npm/lib/node_modules/$CLI_NAME/index.mjs"
   } > "${zuku_temp_launchers[$zuku_index]}"
   # The launcher path is absolute; BSD chmod does not accept GNU's -- separator.
   chmod 755 "${zuku_temp_launchers[$zuku_index]}"

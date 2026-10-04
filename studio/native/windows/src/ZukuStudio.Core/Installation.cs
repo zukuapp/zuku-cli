@@ -23,7 +23,7 @@ public sealed record Installation(string ReleaseRoot, string PackageRoot, string
 ///   &lt;prefix&gt;\releases\cli-&lt;version&gt;-&lt;sha12&gt;\
 ///       install.json                       {schema:'zukujs-user-install/1', version, sha256, node}
 ///       runtime\node.exe                   managed Node (must equal install.json node)
-///       npm\node_modules\@zukujs\cli\      package.json name '@zukujs/cli', same version
+///       npm\node_modules\@zuku\cli\        canonical package; legacy @zukujs\cli if absent
 ///       studio\windows\ZukuStudio.exe      this executable
 /// </summary>
 public static partial class InstallLocator
@@ -79,9 +79,17 @@ public static partial class InstallLocator
             throw new InstallationException("STUDIO_RUNTIME_UNMANAGED");
         RegularFile(node, root, "STUDIO_RUNTIME_MISSING");
 
-        var package = Path.Combine(root, "npm", "node_modules", "@zukujs", "cli");
+        var package = Path.Combine(root, "npm", "node_modules", "@zuku", "cli");
+        var packageName = "@zuku/cli";
+        // An invalid canonical entry fails closed; legacy is considered only when it is absent.
+        try { if (new DirectoryInfo(package).LinkTarget is null) _ = File.GetAttributes(package); }
+        catch (Exception error) when (error is FileNotFoundException or DirectoryNotFoundException)
+        {
+            package = Path.Combine(root, "npm", "node_modules", "@zukujs", "cli");
+            packageName = "@zukujs/cli";
+        }
         var manifest = ReadJson(Path.Combine(package, "package.json"), root, 65536);
-        if (JsonSafety.String(manifest, "name") != "@zukujs/cli" || JsonSafety.String(manifest, "version") != expectedVersion
+        if (JsonSafety.String(manifest, "name") != packageName || JsonSafety.String(manifest, "version") != expectedVersion
             || !manifest.TryGetProperty("bin", out var bin) || JsonSafety.String(bin, "zuku") != "./index.mjs" || JsonSafety.String(bin, "zukujs") != "./index.mjs")
             throw new InstallationException("STUDIO_PACKAGE_INVALID");
 

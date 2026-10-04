@@ -4,7 +4,13 @@
 import path from 'node:path';
 
 export const PRODUCT = 'zuku-studio';
-export const CLI_PACKAGE = '@zukujs/cli';
+export const CLI_PACKAGE = '@zuku/cli';
+export const LEGACY_CLI_PACKAGE = '@zukujs/cli';
+export const CLI_PACKAGES = Object.freeze([CLI_PACKAGE, LEGACY_CLI_PACKAGE]);
+export function cliRootForPackage(name, os) {
+  if (!CLI_PACKAGES.includes(name)) throw new PlatformBuildError('PACKAGE_INVALID', 'Unknown CLI package identity.');
+  return `npm/${os === 'win32' ? '' : 'lib/'}node_modules/${name}`;
+}
 // The official installer pins this runtime; native assets never bring a second Node.
 export const MANAGED_NODE_VERSION = '22.22.3';
 export const INSTALL_MARKER_SCHEMA = 'zukujs-user-install/1';
@@ -41,12 +47,12 @@ export const SHARED_PAYLOAD = Object.freeze([
 const unixLayout = Object.freeze({
   installMarker: 'install.json',
   managedNode: 'runtime/bin/node',
-  cliRoot: 'npm/lib/node_modules/@zukujs/cli',
+  cliRoot: 'npm/lib/node_modules/@zuku/cli',
 });
 const windowsLayout = Object.freeze({
   installMarker: 'install.json',
   managedNode: 'runtime/node.exe',
-  cliRoot: 'npm/node_modules/@zukujs/cli',
+  cliRoot: 'npm/node_modules/@zuku/cli',
 });
 
 // `placement` maps repository build outputs to install-relative archive paths.

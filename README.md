@@ -14,7 +14,7 @@
 <!-- markdownlint-enable MD033 MD041 -->
 <!-- END ZUKU OFFICIAL BRAND -->
 
-# @zukujs/cli: ZUKU 통합 게임 개발 환경
+# @zuku/cli: ZUKU 통합 게임 개발 환경
 
 ZUKU/ZukuJS 게임을 만들고 검증하는 로컬 AI 에이전트와 명령줄 도구입니다. `zuku`와 기존 `zukujs`는 같은 진입점, Agent Core, 제공자 설정, 인증과 세션을 공유합니다. 소스 버전은 0.3.1입니다.
 

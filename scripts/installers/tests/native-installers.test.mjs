@@ -15,7 +15,7 @@ const work = await fs.mkdtemp(path.join(os.tmpdir(), 'zuku-native-installer-'));
 test.after(() => fs.rm(work, { recursive: true, force: true }));
 const version = '0.3.0', platform = 'linux-x64', commit = 'a'.repeat(40);
 const packageRoot = path.join(work, 'package'); await fs.mkdir(packageRoot);
-const pkg = { name: '@zukujs/cli', version, type: 'module', bin: { zuku: './index.mjs', zukujs: './index.mjs' }, bundledDependencies: ['fflate'], dependencies: { fflate: '0.8.3' } };
+const pkg = { name: '@zuku/cli', version, type: 'module', bin: { zuku: './index.mjs', zukujs: './index.mjs' }, bundledDependencies: ['fflate'], dependencies: { fflate: '0.8.3' } };
 await fs.writeFile(path.join(packageRoot, 'package.json'), JSON.stringify(pkg));
 await fs.writeFile(path.join(packageRoot, 'index.mjs'), 'console.log("ZukuJS 0.3.0 installer fixture");\n');
 await fs.mkdir(path.join(packageRoot, 'lib'), { recursive: true }); await fs.copyFile(path.join(cli, 'lib/studio-host.mjs'), path.join(packageRoot, 'lib/studio-host.mjs'));
@@ -28,7 +28,7 @@ for (const relative of SHARED_PAYLOAD) {
 }
 shared.sort((a, b) => a.path < b.path ? -1 : 1);
 const binary = Buffer.from('#!/bin/sh\nprintf "native installer fixture\\n"\n'), nativePath = 'studio/linux/zuku-studio';
-const manifest = { schema: 'zuku-studio-native-asset/1', product: 'zuku-studio', protocolVersion: 1, version, platform: { id: platform, os: 'linux', arch: 'x64' }, cli: { name: pkg.name, version, aliases: ['zuku', 'zukujs'] }, source: { gitCommit: commit, treeState: 'clean' }, sharedPayload: shared, node: { version: '22.22.3', bundled: false }, launcher: { managedNode: 'runtime/bin/node', requiresManagedNode: true, installMarkerSchema: 'zukujs-user-install/1', host: 'npm/lib/node_modules/@zukujs/cli/lib/studio-host.mjs', hostArgs: ['--stdio'] }, placement: { relativeTo: 'release', ownerConfirmed: true }, executable: nativePath, artifacts: [{ path: nativePath, size: binary.length, sha256: sha(binary), executable: true }] };
+const manifest = { schema: 'zuku-studio-native-asset/1', product: 'zuku-studio', protocolVersion: 1, version, platform: { id: platform, os: 'linux', arch: 'x64' }, cli: { name: pkg.name, version, aliases: ['zuku', 'zukujs'] }, source: { gitCommit: commit, treeState: 'clean' }, sharedPayload: shared, node: { version: '22.22.3', bundled: false }, launcher: { managedNode: 'runtime/bin/node', requiresManagedNode: true, installMarkerSchema: 'zukujs-user-install/1', host: 'npm/lib/node_modules/@zuku/cli/lib/studio-host.mjs', hostArgs: ['--stdio'] }, placement: { relativeTo: 'release', ownerConfirmed: true }, executable: nativePath, artifacts: [{ path: nativePath, size: binary.length, sha256: sha(binary), executable: true }] };
 const nativeAsset = value => {
   const target = value.platform.id, format = target.startsWith('win-') ? 'zip' : 'tar.gz';
   const bytes = Buffer.from(JSON.stringify(value) + '\n'), archive = createArchive(format, [{ path: 'source-manifest.json', bytes }, { path: value.artifacts[0].path, bytes: binary, executable: true }], 1780000000);
@@ -44,6 +44,17 @@ await fs.writeFile(path.join(runtimeRoot, 'bin/node'), `#!/bin/bash\nif [[ "\${1
 await fs.writeFile(path.join(runtimeRoot, 'bin/npm'), `#!/bin/bash\nexec ${quote(npm)} "$@"\n`, { mode: 0o755 });
 const runtimeFile = path.join(work, 'runtime.tar.gz'); assert.equal(spawnSync('tar', ['-czf', runtimeFile, '-C', work, path.basename(runtimeRoot)]).status, 0);
 const contract = { schema: 'zukujs-installer/1', cli: { name: pkg.name, version, url: `https://zuzunza.com/downloads/zukujs/cli/${version}/zukujs-cli-${version}.tgz`, sha256: sha(await fs.readFile(cliFile)) }, node: { version: '22.22.3', artifacts: { [platform]: { url: 'https://nodejs.org/dist/v22.22.3/node-v22.22.3-linux-x64.tar.gz', sha256: sha(await fs.readFile(runtimeFile)) } } }, studio: { schema: 'zukujs-studio-installer/1', repository: 'zukuapp/zukujs-cli', tag: `v${version}`, protocolVersion: 1, assets: { [platform]: { url: `https://github.com/zukuapp/zukujs-cli/releases/download/v${version}/${native.record.file}`, record: native.record } } } };
+
+test('installer renders only canonical or legacy finite package identities', async () => {
+  for (const name of ['@zuku/cli', '@zukujs/cli']) {
+    const fixture = { ...contract, cli: { ...contract.cli, name } }, file = path.join(work, name.includes('zukujs') ? 'legacy.json' : 'canonical.json');
+    await fs.writeFile(file, JSON.stringify(fixture));
+    const output = file + '.rendered'; await renderInstallers(file, output);
+    const shell = await fs.readFile(path.join(output, 'install.sh'), 'utf8');
+    assert.ok(shell.includes(`CLI_NAME='${name}'`)); assert.equal(spawnSync('bash', ['-n', path.join(output, 'install.sh')]).status, 0);
+  }
+  for (const name of ['@other/cli', '@zuku/../cli', '@zuku/cli;exec']) assert.throws(() => validateContract({ ...contract, cli: { ...contract.cli, name } }), /CLI identity/);
+});
 
 test('complete fixed Studio contract rejects missing, foreign, dirty or incompatible assets', () => {
   validateContract(contract);

@@ -7,7 +7,8 @@ import Foundation
 struct Installation: Sendable {
     static let runtimeDirectoryName = "zuku-runtime"
     static let installSchema = "zukujs-user-install/1"
-    static let packageName = "@zukujs/cli"
+    static let packageName = "@zuku/cli"
+    static let legacyPackageName = "@zukujs/cli"
 
     let bundleResources: URL   // <App>/Contents/Resources/zuku (signed, managed assets)
     let node: URL              // <runtime>/runtime/bin/node (managed Node, one install)
@@ -62,7 +63,12 @@ struct Installation: Sendable {
         guard FileTrust.regularFile(marker, executable: false), let install = FileTrust.jsonObject(marker) else { return .failure(.runtimeUntrusted) }
 
         let node = runtime.appendingPathComponent("runtime/bin/node")
-        let package = runtime.appendingPathComponent("npm/lib/node_modules/@zukujs/cli", isDirectory: true)
+        let canonical = runtime.appendingPathComponent("npm/lib/node_modules/@zuku/cli", isDirectory: true)
+        var packageInfo = stat()
+        // A present but invalid canonical package must not fall back to a legacy payload.
+        let canonicalPresent = lstat(canonical.path, &packageInfo) == 0 || errno != ENOENT
+        let selectedPackageName = canonicalPresent ? packageName : legacyPackageName
+        let package = canonicalPresent ? canonical : runtime.appendingPathComponent("npm/lib/node_modules/@zukujs/cli", isDirectory: true)
         guard install["schema"] as? String == installSchema,
               (install["sha256"] as? String)?.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil,
               install["node"] as? String == node.path else { return .failure(.runtimeUntrusted) }
@@ -71,7 +77,7 @@ struct Installation: Sendable {
         let manifest = package.appendingPathComponent("package.json")
         guard FileTrust.regularFile(manifest, executable: false), let pkg = FileTrust.jsonObject(manifest) else { return .failure(.runtimeUntrusted) }
         let bin = pkg["bin"] as? [String: Any]
-        guard pkg["name"] as? String == packageName, bin?["zuku"] as? String == "./index.mjs", bin?["zukujs"] as? String == "./index.mjs" else { return .failure(.runtimeUntrusted) }
+        guard pkg["name"] as? String == selectedPackageName, bin?["zuku"] as? String == "./index.mjs", bin?["zukujs"] as? String == "./index.mjs" else { return .failure(.runtimeUntrusted) }
         guard pkg["version"] as? String == version else { return .failure(.versionMismatch) }
 
         let hostEntry = package.appendingPathComponent("lib/studio-host.mjs")

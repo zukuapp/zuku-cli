@@ -34,7 +34,7 @@ Create JSON with schema `zukujs-installer/1`, using:
 
 | Field | Required source |
 | --- | --- |
-| `cli.name` | `@zukujs/cli` |
+| `cli.name` | `@zuku/cli` |
 | `cli.version` | Actual package version |
 | `cli.url` | Fixed, versioned `.tgz` URL on `zuzunza.com` or `www.zuzunza.com` |
 | `cli.sha256` | SHA-256 of the final packed CLI archive |

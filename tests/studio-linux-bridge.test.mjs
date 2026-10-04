@@ -101,18 +101,19 @@ test('pagehide releases native subscription without publishing or cancelling wor
   assert.equal(fixture.sent.some(item => /cancel|publish/.test(item.method)), false); assert.equal(fixture.timers.size, 0);
 });
 
-test('installed Linux shell locates one managed runtime and rejects substituted release markers', options, async t => {
+for (const packageName of ['@zuku/cli', '@zukujs/cli']) test(`installed Linux shell locates ${packageName} with one managed runtime and rejects substituted release markers`, options, async t => {
   const privateRoot = join(root, '.codex'); await mkdir(privateRoot, { recursive: true, mode: 0o700 });
   const fixture = await mkdtemp(join(privateRoot, 'linux-release-'));
   t.after(() => rm(fixture, { recursive: true, force: true }));
-  const release = join(fixture, 'release 공백'), packageRoot = join(release, 'npm/lib/node_modules/@zukujs/cli');
+  const release = join(fixture, 'release 공백'), packageRoot = join(release, 'npm/lib/node_modules', packageName);
   const installed = join(release, 'studio/linux/zuku-studio'), runtime = join(release, 'runtime/bin/node'), markerPath = join(release, 'install.json');
   for (const directory of [join(release, 'studio/linux'), join(release, 'runtime/bin'), join(packageRoot, 'lib/agent-protocol'), join(packageRoot, 'studio/native/linux/tests')]) await mkdir(directory, { recursive: true, mode: 0o700 });
   await copyFile(binary, installed); await chmod(installed, 0o700);
   // This test copies the current test Node, not an official pinned download.
   await copyFile(process.execPath, runtime); await chmod(runtime, 0o700);
   if (typeof process.getuid === 'function') await chown(runtime, process.getuid(), process.getgid());
-  await copyFile(join(root, 'package.json'), join(packageRoot, 'package.json'));
+  const packageMetadata = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+  await writeFile(join(packageRoot, 'package.json'), JSON.stringify({ ...packageMetadata, name: packageName }), { mode: 0o600 });
   await copyFile(join(root, 'lib/agent-protocol/schema.mjs'), join(packageRoot, 'lib/agent-protocol/schema.mjs'));
   await copyFile(join(native, 'tests/stdio-fixture.mjs'), join(packageRoot, 'studio/native/linux/tests/stdio-fixture.mjs'));
   const version = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version;
@@ -120,6 +121,12 @@ test('installed Linux shell locates one managed runtime and rejects substituted 
   const save = value => writeFile(markerPath, JSON.stringify(value), { mode: 0o600 });
   const run = args => spawnSync(installed, args, { encoding: 'utf8', timeout: 8000 });
   await save(marker); const pipe = run(['--stdio-test']); assert.equal(pipe.status, 0, pipe.stderr); assert.match(pipe.stdout, /3 versioned C\/Node fixture round trips/);
+  if (packageName === '@zukujs/cli') {
+    const canonical = join(release, 'npm/lib/node_modules/@zuku/cli'); await mkdir(canonical, { recursive: true, mode: 0o700 });
+    await writeFile(join(canonical, 'package.json'), JSON.stringify({ ...packageMetadata, name: 'foreign-package' }), { mode: 0o600 });
+    assert.equal(run(['--version']).status, 2, 'invalid canonical package cannot fall back to a valid legacy payload');
+    await rm(canonical, { recursive: true });
+  }
   assert.equal(run(['--managed-node', runtime, '--version']).status, 0);
   assert.equal(run(['--managed-node', process.execPath, '--version']).status, 2);
   for (const changed of [{ ...marker, node: process.execPath }, { ...marker, version: '999.0.0' }, { ...marker, schema: 'foreign/1' }, { ...marker, sha256: 'invalid' }]) { await save(changed); assert.equal(run(['--version']).status, 2); }

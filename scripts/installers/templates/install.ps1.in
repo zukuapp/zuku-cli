@@ -171,9 +171,9 @@ function Invoke-ZukuJSUserInstall {
         [IO.File]::WriteAllText($globalConfig, '')
         Write-Host 'Installing into the user directory...'
         Invoke-ZukuNode $nodePath @($npmJs, 'install', '--offline', '--ignore-scripts', '--no-audit', '--no-fund', '--update-notifier=false', '--global', '--prefix', $npmPrefix, '--cache', (Join-Path $work 'npm-cache'), '--userconfig', $userConfig, '--globalconfig', $globalConfig, $cliArchive) | Out-Host
-        $packageRoot = Join-Path $npmPrefix 'node_modules\@zukujs\cli'
+        $packageRoot = Join-Path $npmPrefix ('node_modules\' + $contract.cli.name.Replace('/', '\'))
         $package = Get-Content -LiteralPath (Join-Path $packageRoot 'package.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-        if ($package.name -ne '@zukujs/cli' -or $package.version -ne $contract.cli.version -or $package.bin.zuku -ne './index.mjs' -or $package.bin.zukujs -ne './index.mjs') { throw 'Installed CLI identity did not match the verified release.' }
+        if ($package.name -ne $contract.cli.name -or $package.version -ne $contract.cli.version -or $package.bin.zuku -ne './index.mjs' -or $package.bin.zukujs -ne './index.mjs') { throw 'Installed CLI identity did not match the verified release.' }
         Invoke-ZukuNode $nodePath @((Join-Path $packageRoot 'index.mjs'), '--help') | Out-Null
         if ($useRuntime) { $finalNode = Join-Path $release 'runtime\node.exe' } else { $finalNode = $nodePath }
         $marker = @{schema='zukujs-user-install/1'; version=$contract.cli.version; sha256=$contract.cli.sha256; node=$finalNode} | ConvertTo-Json -Compress
@@ -192,7 +192,7 @@ function Invoke-ZukuJSUserInstall {
         if (-not (Test-Path -LiteralPath $bin)) { New-ZukuUserDirectory $bin; $binCreated = $true }
         Assert-ZukuDirectory $bin
         foreach ($alias in $aliases) { Assert-ZukuLauncher $launchers[$alias] }
-        $entry = Join-Path $release 'npm\node_modules\@zukujs\cli\index.mjs'
+        $entry = Join-Path $release ('npm\node_modules\' + $contract.cli.name.Replace('/', '\') + '\index.mjs')
         $tempLaunchers = @{}
         foreach ($alias in $aliases) {
             $launcher = $launchers[$alias]

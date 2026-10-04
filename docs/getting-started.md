@@ -4,7 +4,7 @@
 
 - Node.js 22 이상(`package.json` `engines`).
 - 런타임 의존성은 `package.json`에 고정되어 있습니다. 브라우저는 `playwright-core`, Bedrock·Vertex 인증은 공식 AWS·Google 라이브러리를 사용합니다. ZWF2 구현은 MIT 라이선스 [`zukuapp/zwf`](https://github.com/zukuapp/zwf) 0.1.1을 고지와 함께 포함(vendored)했습니다.
-- `@zukujs/cli` 0.3.1은 npm 배포 후보입니다. 게시 확인 전에는 아래 소스 설치 방법을 사용하세요.
+- `@zuku/cli` 0.3.1은 npm 배포 후보입니다. 게시 확인 전에는 아래 소스 설치 방법을 사용하세요.
 
 ## 소스 체크아웃에서 설치
 
@@ -17,7 +17,7 @@ zukujs --help
 zukujs version --json
 ```
 
-링크를 지우려면 `npm unlink -g @zukujs/cli`를 실행하세요.
+링크를 지우려면 `npm unlink -g @zuku/cli`를 실행하세요.
 
 ## 첫 프로젝트 (네트워크 없음)
 

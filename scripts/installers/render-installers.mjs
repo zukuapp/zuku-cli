@@ -6,7 +6,7 @@ const base = path.dirname(fileURLToPath(import.meta.url));
 export function validateContract(value) {
   if (value?.schema !== 'zukujs-installer/1') throw Error('Expected zukujs-installer/1.');
   const { cli, node } = value;
-  if (cli?.name !== '@zukujs/cli' || !/^\d+\.\d+\.\d+$/.test(cli.version ?? '')) throw Error('Invalid CLI identity.');
+  if (!['@zuku/cli', '@zukujs/cli'].includes(cli?.name) || !/^\d+\.\d+\.\d+$/.test(cli.version ?? '')) throw Error('Invalid CLI identity.');
   const digest = x => typeof x === 'string' && /^[a-f0-9]{64}$/.test(x);
   if (!digest(cli.sha256)) throw Error('CLI SHA-256 must be complete.');
   const url = new URL(cli.url);
@@ -37,7 +37,7 @@ const psQuote = value => "'" + value.replaceAll("'", "''") + "'";
 export async function renderInstallers(contractPath, outputDirectory) {
   const contract = validateContract(JSON.parse(await fs.readFile(contractPath, 'utf8')));
   const substitutions = {
-    CLI_VERSION_SH: shQuote(contract.cli.version), PACKAGE_URL_SH: shQuote(contract.cli.url),
+    CLI_NAME_SH: shQuote(contract.cli.name), CLI_VERSION_SH: shQuote(contract.cli.version), PACKAGE_URL_SH: shQuote(contract.cli.url),
     PACKAGE_SHA256_SH: shQuote(contract.cli.sha256), NODE_VERSION_SH: shQuote(contract.node.version),
     NODE_CASES_SH: Object.entries(contract.node.artifacts).filter(([platform]) => !platform.startsWith('win-')).map(([platform, a]) => `  ${platform}) NODE_URL=${shQuote(a.url)}; NODE_SHA256=${shQuote(a.sha256)} ;;`).join('\n'),
     STUDIO_ENABLED_SH: contract.studio ? '1' : '0',
